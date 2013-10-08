@@ -46,6 +46,8 @@ LDFLAGS+="-Wl,--rpath=%{_libdir} -Wl,--hash-style=both -Wl,--as-needed"; export 
 make -j1 
 
 %install
+mkdir -p %{buildroot}/usr/share/license
+cp LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
 %make_install
 
 %post -p /sbin/ldconfig
@@ -57,7 +59,7 @@ make -j1
 %manifest libmm-player.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so.*
-
+/usr/share/license/%{name}
 
 %files devel
 %defattr(-,root,root,-)
