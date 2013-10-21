@@ -3240,10 +3240,7 @@ __mmplayer_gst_create_audio_pipeline(mm_player_t* player)
 			"audiosink", link_audio_sink_now);
 
 		/* sync on */
-		if (MMPLAYER_IS_RTSP_STREAMING(player))
-			g_object_set (G_OBJECT (audiobin[MMPLAYER_A_SINK].gst), "sync", FALSE, NULL); 	/* sync off */
-		else
-			g_object_set (G_OBJECT (audiobin[MMPLAYER_A_SINK].gst), "sync", TRUE, NULL); 	/* sync on */
+		g_object_set (G_OBJECT (audiobin[MMPLAYER_A_SINK].gst), "sync", TRUE, NULL); 	/* sync on */
 
 		/* qos on */
 		g_object_set (G_OBJECT (audiobin[MMPLAYER_A_SINK].gst), "qos", TRUE, NULL); 	/* qos on */
@@ -5422,6 +5419,8 @@ int __gst_pause(mm_player_t* player, gboolean async) // @
 		}
 		else if ( (!player->pipeline->videobin) && (!player->pipeline->audiobin) )
 		{
+			if(MMPLAYER_IS_RTSP_STREAMING(player))
+				return ret;
 			player->msg_posted = TRUE; // no need to post error by message callback
 			return MM_ERROR_PLAYER_CODEC_NOT_FOUND;
 		}
@@ -8590,15 +8589,15 @@ const char *padname, const GList *templlist)
 		{
 			mainbin[MMPLAYER_M_Q1].id = MMPLAYER_M_Q1;
 			mainbin[MMPLAYER_M_Q1].gst = queue;
-
-			g_object_set (G_OBJECT (mainbin[MMPLAYER_M_Q1].gst), "max-size-time", q_max_size_time * GST_SECOND, NULL);
+			if (!MMPLAYER_IS_RTSP_STREAMING(player))
+				g_object_set (G_OBJECT (mainbin[MMPLAYER_M_Q1].gst), "max-size-time", q_max_size_time * GST_SECOND, NULL);
 		}
 		else if(mainbin[MMPLAYER_M_Q2].gst == NULL)
 		{
 			mainbin[MMPLAYER_M_Q2].id = MMPLAYER_M_Q2;
 			mainbin[MMPLAYER_M_Q2].gst = queue;
-
-			g_object_set (G_OBJECT (mainbin[MMPLAYER_M_Q2].gst), "max-size-time", q_max_size_time * GST_SECOND, NULL);
+			if (!MMPLAYER_IS_RTSP_STREAMING(player))
+				g_object_set (G_OBJECT (mainbin[MMPLAYER_M_Q2].gst), "max-size-time", q_max_size_time * GST_SECOND, NULL);
 		}
 		else
 		{
