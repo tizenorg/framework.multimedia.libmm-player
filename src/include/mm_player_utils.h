@@ -251,6 +251,16 @@ debug_log("------------------------------------------------------------\n");
 #define 	MMPLAYER_PT_IS_AUDIO( x_pt )		( strstr(x_pt, "_97") || strstr(x_pt, "audio") )
 #define 	MMPLAYER_PT_IS_VIDEO( x_pt )		( strstr(x_pt, "_96") || strstr(x_pt, "video") )
 
+#define MMPLAYER_VIDEO_SINK_CHECK(x_player) \
+do \
+{ \
+	return_val_if_fail ( x_player && \
+		x_player->pipeline && \
+		x_player->pipeline->videobin && \
+		x_player->pipeline->videobin[MMPLAYER_V_SINK].gst, \
+		MM_ERROR_PLAYER_NOT_INITIALIZED ); \
+} while(0);
+
 bool util_is_sdp_file ( const char *path );
 int64_t uti_get_time ( void );
 int util_get_rank_increase ( const char *factory_class );

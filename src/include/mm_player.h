@@ -1546,6 +1546,63 @@ int mm_player_get_track_count(MMHandleType player,  MMPlayerTrackType track_type
 
 
 /**
+ * This function is to set zoom level.
+ *
+ * @param       player         [in]    handle of player.
+ * @param       level           [in]    level of zoom
+ *
+ * @return      This function returns zero on success, or negative value with error
+ *                      code.
+ *
+ * @see
+ * @remark      None
+ */
+int mm_player_set_display_zoom(MMHandleType player, float level);
+
+/**
+ * This function is to get zoom level.
+ *
+ * @param       player          [in]    handle of player.
+ * @param       type             [out]  current level of zoom
+ *
+ * @return      This function returns zero on success, or negative value with error
+ *                      code.
+ *
+ * @see
+ * @remark      None
+ */
+int mm_player_get_display_zoom(MMHandleType player, float *level);
+
+/**
+ * This function is to set the start position of zoom
+ *
+ * @param       player           [in]    handle of player
+ * @param       x             	[in]    start x position
+ * @param       y           	[in]  	start y position
+ *
+ * @return      This function returns zero on success, or negative value with error
+ *                      code.
+ *
+ * @see
+ * @remark      None
+ */
+int mm_player_set_display_zoom_start_position(MMHandleType player, int x, int y);
+
+/**
+ * This function is to get the start position of zoom
+ *
+ * @param       player           [in]    handle of player
+ * @param       x             	[out]    start x position
+ * @param       y           	[out]    start y position
+ *
+ * @return      This function returns zero on success, or negative value with error
+ *                      code.
+ *
+ * @see
+ * @remark      None
+ */
+int mm_player_get_display_zoom_start_position(MMHandleType player, int *x, int *y);
+/**
 	@}
  */
 

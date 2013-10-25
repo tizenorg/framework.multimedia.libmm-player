@@ -682,12 +682,12 @@ _mmplayer_construct_attribute(MMHandleType handle)
 		},
 		{
 			"display_zoom",
-			MM_ATTRS_TYPE_INT,
+			MM_ATTRS_TYPE_DOUBLE,
 			MM_ATTRS_FLAG_RW,
 			(void *) 1,
-			MM_ATTRS_VALID_TYPE_INT_RANGE,
-			1,
-			MMPLAYER_MAX_INT
+			MM_ATTRS_VALID_TYPE_DOUBLE_RANGE,
+			1.0,
+			9.0
 		},
 		{
 			"display_surface_type",

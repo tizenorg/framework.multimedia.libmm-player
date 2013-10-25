@@ -802,3 +802,63 @@ int mm_player_ignore_session(MMHandleType player)
 
 	return result;
 }
+
+int mm_player_set_display_zoom(MMHandleType player, float level)
+{
+	int result = MM_ERROR_NONE;
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_display_zoom(player, level);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_display_zoom(MMHandleType player, float *level)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(level, MM_ERROR_COMMON_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_display_zoom(player, level);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_display_zoom_start_position(MMHandleType player, int x, int y)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_display_zoom_start_pos(player, x, y);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_display_zoom_start_position(MMHandleType player, int *x, int *y)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_display_zoom_start_pos(player, x, y);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}

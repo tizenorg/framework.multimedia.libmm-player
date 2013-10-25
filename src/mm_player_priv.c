@@ -2702,16 +2702,9 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 		{
 			debug_log ("missing 'orientation' field in video caps");
 		}
-		else
-		{
-			debug_log("origianl video orientation = %d", org_angle);
-		}
 	}
 
-	debug_log("check user angle: %d, org angle: %d", user_angle, org_angle);
-
-	/* get rotation value to set */
-	__mmplayer_get_property_value_for_rotation(player, org_angle+user_angle, &rotation_value);
+	debug_log("check user angle: %d, orientation: %d", user_angle, org_angle);
 
 	/* check video stream callback is used */
 	if( player->use_video_stream )
@@ -2736,18 +2729,22 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 				if (height)
 					g_object_set(player->pipeline->videobin[MMPLAYER_V_CONV].gst, "dst-height", height, NULL);
 
+				/* NOTE: fimcconvert does not manage index of src buffer from upstream src-plugin, decoder gives frame information in output buffer with no ordering */
+				g_object_set(player->pipeline->videobin[MMPLAYER_V_CONV].gst, "src-rand-idx", TRUE, NULL);
+
+				/* get rotation value to set */
+				__mmplayer_get_property_value_for_rotation(player, org_angle+user_angle, &rotation_value);
+
 				g_object_set(player->pipeline->videobin[MMPLAYER_V_CONV].gst, "rotate", rotation_value, NULL);
 				debug_log("updating fimcconvert - r[%d], w[%d], h[%d]", rotation_value, width, height);
-			}
-			else
-			{
-				debug_error("no available video converter");
-				return MM_ERROR_PLAYER_INTERNAL;
 			}
 		}
 		else
 		{
 			debug_log("using video stream callback with memsink. player handle : [%p]", player);
+
+			/* get rotation value to set */
+			__mmplayer_get_property_value_for_rotation(player, org_angle+user_angle, &rotation_value);
 
 			g_object_set(player->pipeline->videobin[MMPLAYER_V_FLIP].gst, "method", rotation_value, NULL);
 		}
@@ -2766,7 +2763,7 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 		{
 			/* ximagesink or xvimagesink */
 			void *xid = NULL;
-			int zoom = 0;
+			double zoom = 0;
 			int display_method = 0;
 			int roi_x = 0;
 			int roi_y = 0;
@@ -2800,35 +2797,52 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 			if (!strcmp(PLAYER_INI()->videosink_element_x,"xvimagesink"))
 			{
 				mm_attrs_get_int_by_name(attrs, "display_force_aspect_ration", &force_aspect_ratio);
-				mm_attrs_get_int_by_name(attrs, "display_zoom", &zoom);
+				mm_attrs_get_double_by_name(attrs, "display_zoom", &zoom);
 				mm_attrs_get_int_by_name(attrs, "display_method", &display_method);
 				mm_attrs_get_int_by_name(attrs, "display_roi_x", &roi_x);
 				mm_attrs_get_int_by_name(attrs, "display_roi_y", &roi_y);
 				mm_attrs_get_int_by_name(attrs, "display_roi_width", &roi_w);
 				mm_attrs_get_int_by_name(attrs, "display_roi_height", &roi_h);
 				mm_attrs_get_int_by_name(attrs, "display_visible", &visible);
+				#define DEFAULT_DISPLAY_MODE	2	// TV only, PRI_VIDEO_OFF_AND_SEC_VIDEO_FULL_SCREEN
+
+				/* setting for ROI mode */
+				if (display_method == 5)	// 5 for ROI mode
+				{
+					int roi_mode = 0;
+					mm_attrs_get_int_by_name(attrs, "display_roi_mode", &roi_mode);
+					g_object_set(player->pipeline->videobin[MMPLAYER_V_SINK].gst,
+						"dst-roi-mode", roi_mode,
+						"dst-roi-x", roi_x,
+						"dst-roi-y", roi_y,
+						"dst-roi-w", roi_w,
+						"dst-roi-h", roi_h,
+						NULL );
+					/* get rotation value to set,
+					   do not use org_angle because ROI mode in xvimagesink needs both a rotation value and an orientation value */
+					__mmplayer_get_property_value_for_rotation(player, user_angle, &rotation_value);
+				}
+				else
+				{
+					/* get rotation value to set */
+					__mmplayer_get_property_value_for_rotation(player, org_angle+user_angle, &rotation_value);
+				}
 
 				g_object_set(player->pipeline->videobin[MMPLAYER_V_SINK].gst,
 					"force-aspect-ratio", force_aspect_ratio,
-					"zoom", zoom,
+					"zoom", (float)zoom,
+					"orientation", org_angle/90, // setting for orientation of media, it is used for ROI/ZOOM feature in xvimagesink
 					"rotate", rotation_value,
 					"handle-events", TRUE,
 					"display-geometry-method", display_method,
 					"draw-borders", FALSE,
-					"dst-roi-x", roi_x,
-					"dst-roi-y", roi_y,
-					"dst-roi-w", roi_w,
-					"dst-roi-h", roi_h,
 					"visible", visible,
+					"display-mode", DEFAULT_DISPLAY_MODE,
 					NULL );
 
-				debug_log("set video param : zoom %d", zoom);
-				debug_log("set video param : rotate %d", rotation_value);
-				debug_log("set video param : method %d", display_method);
-				debug_log("set video param : dst-roi-x: %d, dst-roi-y: %d, dst-roi-w: %d, dst-roi-h: %d",
-								roi_x, roi_y, roi_w, roi_h );
-				debug_log("set video param : visible %d", visible);
-				debug_log("set video param : force aspect ratio %d", force_aspect_ratio);
+				debug_log("set video param : zoom %lf, rotate %d, method %d visible %d", zoom, rotation_value, display_method, visible);
+				debug_log("set video param : dst-roi-x: %d, dst-roi-y: %d, dst-roi-w: %d, dst-roi-h: %d", roi_x, roi_y, roi_w, roi_h );
+				debug_log("set video param : force aspect ratio %d, display mode %d", force_aspect_ratio, DEFAULT_DISPLAY_MODE);
 			}
 
             /* if vaapisink */
@@ -2857,8 +2871,7 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 						"evas-object", object,
 						"visible", visible,
 						NULL);
-				debug_log("set video param : evas-object %x", object);
-				debug_log("set video param : visible %d", visible);
+				debug_log("set video param : evas-object %x, visible %d", object, visible);
 			}
 			else
 			{
@@ -2877,6 +2890,7 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 				mm_attrs_get_int_by_name(attrs, "display_height", &height);
 
 				/* NOTE: fimcconvert does not manage index of src buffer from upstream src-plugin, decoder gives frame information in output buffer with no ordering */
+				g_object_set(player->pipeline->videobin[MMPLAYER_V_CONV].gst, "src-rand-idx", TRUE, NULL);
 				g_object_set(player->pipeline->videobin[MMPLAYER_V_CONV].gst, "dst-buffer-num", 5, NULL);
 
 				if (no_scaling)
@@ -2919,8 +2933,12 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 				mm_attrs_get_int_by_name(attrs, "display_roi_width", &roi_w);
 				mm_attrs_get_int_by_name(attrs, "display_roi_height", &roi_h);
 
+				/* get rotation value to set */
+				__mmplayer_get_property_value_for_rotation(player, org_angle+user_angle, &rotation_value);
+
 				g_object_set(player->pipeline->videobin[MMPLAYER_V_SINK].gst,
 					"origin-size", origin_size,
+					"rotate", rotation_value,
 					"dst-roi-x", roi_x,
 					"dst-roi-y", roi_y,
 					"dst-roi-w", roi_w,
@@ -2933,7 +2951,6 @@ _mmplayer_update_video_param(mm_player_t* player) // @
 								roi_x, roi_y, roi_w, roi_h );
 				debug_log("set video param : display_evas_do_scaling %d (origin-size %d)", scaling, origin_size);
 			}
-			g_object_set(player->pipeline->videobin[MMPLAYER_V_FLIP].gst, "method", rotation_value, NULL);
 		}
 		break;
 		case MM_DISPLAY_SURFACE_X_EXT:	/* NOTE : this surface type is used for the videoTexture(canvasTexture) overlay */
@@ -10524,4 +10541,76 @@ __is_http_progressive_down(mm_player_t* player)
 	return_val_if_fail( player, FALSE );
 
 	return ((player->pd_mode) ? TRUE:FALSE);
+}
+
+int
+_mmplayer_set_display_zoom(MMHandleType hplayer, float level)
+{
+	mm_player_t* player = (mm_player_t*) hplayer;
+
+	return_val_if_fail ( player, MM_ERROR_PLAYER_NOT_INITIALIZED );
+
+	MMPLAYER_VIDEO_SINK_CHECK(player);
+
+	debug_log("setting display zoom level = %f", level);
+
+	g_object_set(player->pipeline->videobin[MMPLAYER_V_SINK].gst, "zoom", level, NULL);
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_get_display_zoom(MMHandleType hplayer, float *level)
+{
+	mm_player_t* player = (mm_player_t*) hplayer;
+	float _level = 0.0;
+
+	return_val_if_fail ( player, MM_ERROR_PLAYER_NOT_INITIALIZED );
+
+	MMPLAYER_VIDEO_SINK_CHECK(player);
+
+	g_object_get(player->pipeline->videobin[MMPLAYER_V_SINK].gst, "zoom", &_level, NULL);
+
+	debug_log("display zoom level = %f", _level);
+
+	*level = _level;
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_set_display_zoom_start_pos(MMHandleType hplayer, int x, int y)
+{
+	mm_player_t* player = (mm_player_t*) hplayer;
+
+	return_val_if_fail ( player, MM_ERROR_PLAYER_NOT_INITIALIZED );
+
+	MMPLAYER_VIDEO_SINK_CHECK(player);
+
+	debug_log("setting display zoom offset = %d, %d", x, y);
+
+	g_object_set(player->pipeline->videobin[MMPLAYER_V_SINK].gst, "zoom-pos-x", x, "zoom-pos-y", y, NULL);
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_get_display_zoom_start_pos(MMHandleType hplayer, int *x, int *y)
+{
+	int _x = 0;
+	int _y = 0;
+	mm_player_t* player = (mm_player_t*) hplayer;
+
+	return_val_if_fail ( player, MM_ERROR_PLAYER_NOT_INITIALIZED );
+
+	MMPLAYER_VIDEO_SINK_CHECK(player);
+
+	g_object_get(player->pipeline->videobin[MMPLAYER_V_SINK].gst, "zoom-pos-x", &_x, "zoom-pos-y", &_y, NULL);
+
+	debug_log("display zoom start off x = %d, y = %d", _x, _y);
+
+	*x = _x;
+	*y = _y;
+
+	return MM_ERROR_NONE;
 }
