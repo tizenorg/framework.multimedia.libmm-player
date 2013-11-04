@@ -2570,6 +2570,10 @@ __mmplayer_get_property_value_for_rotation(mm_player_t* player, int rotation_ang
 				{
 					rotation_using_type = ROTATION_USING_FLIP;
 				}
+				else if (!strcmp(PLAYER_INI()->videosink_element_evas,"evaspixmapsink"))
+				{
+					rotation_using_type = ROTATION_USING_X;
+				}
 				else
 				{
 					debug_error("it should not be here..");
