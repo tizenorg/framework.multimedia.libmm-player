@@ -1,19 +1,12 @@
 Name:       libmm-player
 Summary:    Multimedia Framework Player Library
-%if 0%{?tizen_profile_mobile}
-Version:    0.2.27
+Version:    0.5.56
 Release:    0
-%else
-Version:    0.4.51
-Release:    0
-%endif
-VCS:        magnolia/framework/multimedia/libmm-player#libmm-player-0.3.68-0-210-gf6b0a076a779eaddfd94fcdd0ccb5473f1c6ab39
 Group:      System/Libraries
 License:    Apache License, Version 2.0
 Source0:    %{name}-%{version}.tar.gz
 Requires(post):  /sbin/ldconfig
 Requires(postun):  /sbin/ldconfig
-BuildRequires:  pkgconfig(mm-ta)
 BuildRequires:  pkgconfig(mm-common)
 BuildRequires:  pkgconfig(mm-sound)
 BuildRequires:  pkgconfig(gstreamer-0.10)
@@ -30,6 +23,7 @@ BuildRequires:  pkgconfig(evas)
 BuildRequires:  pkgconfig(iniparser)
 BuildRequires:  pkgconfig(vconf)
 BuildRequires:  pkgconfig(icu-i18n)
+BuildRequires:  pkgconfig(utilX)
 
 BuildRoot:  %{_tmppath}/%{name}-%{version}-build
 
@@ -46,35 +40,23 @@ Requires:   %{name} = %{version}-%{release}
 %setup -q
 
 %build
-%if 0%{?tizen_profile_wearable}
-cd wearable
-%else
-cd mobile
-%endif
+
 ./autogen.sh
 
-CFLAGS+="  -Wall -D_LITEW_OPT_ -D_MM_PLAYER_ALP_PARSER -D_FILE_OFFSET_BITS=64 -DMMFW_DEBUG_MODE -DGST_EXT_TIME_ANALYSIS -DUSE_AUDIO_EFFECT -DEXPORT_API=\"__attribute__((visibility(\\\"default\\\")))\" "; export CFLAGS
+CFLAGS+="  -Wall -Werror -D_MM_PLAYER_ALP_PARSER -D_FILE_OFFSET_BITS=64 -DMMFW_DEBUG_MODE -DGST_EXT_TIME_ANALYSIS -DUSE_AUDIO_EFFECT -DEXPORT_API=\"__attribute__((visibility(\\\"default\\\")))\" "; export CFLAGS
 LDFLAGS+="-Wl,--rpath=%{_prefix}/lib -Wl,--hash-style=both -Wl,--as-needed"; export LDFLAGS
 
 # always enable sdk build. This option should go away
-CFLAGS=$CFLAGS LDFLAGS=$LDFLAGS ./configure --enable-sdk --prefix=%{_prefix} --disable-static
+CFLAGS=$CFLAGS LDFLAGS=$LDFLAGS ./configure --prefix=%{_prefix} --disable-static
 
 # Call make instruction with smp support
-make -j1 
+make %{?jobs:-j%jobs}
 
 %install
-%if 0%{?tizen_profile_wearable}
-cd wearable
-%else
-cd mobile
-%endif
 rm -rf %{buildroot}
 mkdir -p %{buildroot}/%{_datadir}/license
-cp LICENSE.APLv2 %{buildroot}/%{_datadir}/license/%{name}
+cp -rf %{_builddir}/%{name}-%{version}/LICENSE.APLv2 %{buildroot}/%{_datadir}/license/%{name}
 %make_install
-
-
-#rm -f %{buildroot}/usr/bin/test_alarmdb
 
 %clean
 rm -rf %{buildroot}
@@ -87,16 +69,9 @@ rm -rf %{buildroot}
 
 
 %files
-%if 0%{?tizen_profile_wearable}
-%manifest wearable/libmm-player.manifest
-%else
-%manifest mobile/libmm-player.manifest
-%endif
+%manifest libmm-player.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so.*
-%if 0%{?tizen_profile_wearable}
-%{_bindir}/*
-%endif
 %{_datadir}/license/%{name}
 
 %files devel
