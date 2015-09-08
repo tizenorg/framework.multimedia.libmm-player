@@ -98,15 +98,19 @@
 typedef enum {
     MM_PLAYER_COLORSPACE_I420 = 0, 		/**< I420 format - planer */
     MM_PLAYER_COLORSPACE_RGB888,			/**< RGB888 pixel format */
-    MM_PLAYER_COLORSPACE_NV12_TILED,		/**< Customized color format in s5pc110 */
+    MM_PLAYER_COLORSPACE_NV12_TILED,		/**< Customized color format */
+    MM_PLAYER_COLORSPACE_NV12,
 }MMPlayerVideoColorspace;
 
 typedef struct
 {
 	unsigned char *data;					/* capture image buffer */
 	int size;								/* capture image size */
-	MMPlayerVideoColorspace fmt;			/* color space type */	
-} MMPlayerVideoCapture;
+	MMPlayerVideoColorspace fmt;			/* color space type */
+	unsigned int width;						/* width of captured image */
+	unsigned int height;					/* height of captured image */
+	unsigned int orientation;				/* content orientation */
+}MMPlayerVideoCapture;
 
 /**
  * Buffer need data callback function type.
@@ -148,11 +152,11 @@ typedef bool	(*mm_player_buffer_seek_data_callback) (unsigned long long offset, 
  * @param	user_param	[in]	User defined parameter which is passed when set
  *								video stream callback
  * @param	width		[in]	width of video frame
- * @param	height		[in]	height of video frame							
+ * @param	height		[in]	height of video frame
  *
  * @return	This callback function have to return MM_ERROR_NONE.
  */
-typedef bool	(*mm_player_video_stream_callback) (void *stream, int stream_size, void *user_param, int width, int height);
+typedef bool	(*mm_player_video_stream_callback) (void *stream, void *user_param);
 
 /**
  * Audio stream callback function type.
@@ -167,6 +171,17 @@ typedef bool	(*mm_player_video_stream_callback) (void *stream, int stream_size, 
 typedef bool	(*mm_player_video_capture_callback) (void *stream, int stream_size, void *user_param);
 
 /**
+ * Video frame render error callback function type.
+ *
+ * @param	error_id	[in]	cause of error
+ * @param	user_param	[in]	User defined parameter which is passed when set
+ *								video frame render error callback
+ *
+ * @return	This callback function have to return MM_ERROR_NONE.
+ */
+typedef bool	(*mm_player_video_frame_render_error_callback) (void *error_id, void *user_param);
+
+/**
  * This function is to set play speed for playback.
  *
  * @param	player		[in]	Handle of player.
@@ -174,9 +189,9 @@ typedef bool	(*mm_player_video_capture_callback) (void *stream, int stream_size,
  *
  * @return	This function returns zero on success, or negative value with error
  *			code
- * @remark	The current supported range is from -64x to 64x. 
+ * @remark	The current supported range is from -64x to 64x.
  * 		But, the quailty is dependent on codec performance.
- * 		And, the sound is muted under normal speed and more than double speed.  
+ * 		And, the sound is muted under normal speed and more than double speed.
  * @see
  * @since
  */
@@ -198,30 +213,15 @@ int mm_player_set_play_speed(MMHandleType player, float rate);
 int mm_player_set_video_stream_callback(MMHandleType player, mm_player_video_stream_callback callback, void *user_param);
 
 /**
- * This function set callback function for receiving audio stream from player.
- *
- * @param       player          [in]    Handle of player.
- * @param       callback                [in]    Audio buffer callback function.
- * @param       user_param      [in]    User parameter.
- *
- * @return      This function returns zero on success, or negative value with error
- *                      code.
- * @remark      It can be used for audio playback only.
- * @see         mm_player_audio_stream_callback
- * @since
- */
-int mm_player_set_audio_buffer_callback(MMHandleType player, mm_player_audio_stream_callback callback, void *user_param);
-
-/**
- * This function is to capture video frame. 
+ * This function is to capture video frame.
  *
  * @param	player		[in]	Handle of player.
  *
  * @return	This function returns zero on success, or negative value with error
  *			code.
  *
- * @remark	Captured buffer is sent asynchronously through message callback with MM_MESSAGE_VIDEO_CAPTURED. 
- *			And, application should free the captured buffer directly. 
+ * @remark	Captured buffer is sent asynchronously through message callback with MM_MESSAGE_VIDEO_CAPTURED.
+ *			And, application should free the captured buffer directly.
  * @see		MM_MESSAGE_VIDEO_CAPTURED
  * @since
  */
@@ -287,6 +287,20 @@ int mm_player_set_buffer_seek_data_callback(MMHandleType player, mm_player_buffe
  */
 int mm_player_push_buffer(MMHandleType player, unsigned char *buf, int size);
 
+/**
+ * This function changes the previous videosink plugin for a new one
+ *
+ * @param	player			[in]	Handle of player.
+ * @param	display_surface_type	[in]	display surface type to set
+ * @param	display_overlay			[in]	display overlay to set
+ *
+ * @return	This function returns zero on success, or negative value with error
+ *			code.
+ * @remark
+ * @see
+ * @since
+ */
+int mm_player_change_videosink(MMHandleType player, MMDisplaySurfaceType display_surface_type, void *display_overlay);
 
 /**
 	@}

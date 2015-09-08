@@ -72,3 +72,4 @@ int _mmplayer_do_video_capture(MMHandleType hplayer);
 #endif
 
 #endif
+

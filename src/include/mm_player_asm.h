@@ -19,13 +19,12 @@
  * limitations under the License.
  *
  */
- 
+
 #ifndef __MM_PLAYER_ASM_H__
 #define __MM_PLAYER_ASM_H__
 
 #include <glib.h>
 #include <mm_types.h>
-#include <mm_error.h>
 
 #include <mm_session.h>
 #include <mm_session_private.h>
@@ -38,16 +37,23 @@ extern "C" {
 typedef struct {
 	int handle;
 	int pid;
-	int by_asm_cb;
+	bool by_asm_cb;
+	int antishock;
 	int event_src;
+	int skip_session;
+	bool keep_last_pos;
+	int user_route_policy;
 	ASM_sound_states_t state;
 	ASM_sound_events_t event;
+	ASM_resource_t resource;
+	bool exit_cb;
+	bool cb_pending;
 } MMPlayerASM;
 
-/* returns allocated handle */
 gint _mmplayer_asm_register(MMPlayerASM* sm, ASM_sound_cb_t callback, void* param);
-gint _mmplayer_asm_deregister(MMPlayerASM* sm);
-gint _mmplayer_asm_set_state(MMHandleType player, ASM_sound_states_t state);
+gint _mmplayer_asm_unregister(MMPlayerASM* sm);
+gint _mmplayer_asm_set_state(MMHandleType player, ASM_sound_states_t state, gboolean enable_safety_vol);
+ASM_cb_result_t __mmplayer_asm_callback(int handle, ASM_event_sources_t event_src, ASM_sound_commands_t command, unsigned int sound_status, void* cb_data);
 
 #ifdef __cplusplus
 }
