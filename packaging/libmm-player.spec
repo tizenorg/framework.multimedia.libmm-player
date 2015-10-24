@@ -1,6 +1,6 @@
 Name:       libmm-player
 Summary:    Multimedia Framework Player Library
-Version:    0.5.58
+Version:    0.5.68
 Release:    1
 Group:      System/Libraries
 License:    Apache-2.0
@@ -9,22 +9,17 @@ Requires(post):  /sbin/ldconfig
 Requires(postun):  /sbin/ldconfig
 BuildRequires:  pkgconfig(mm-common)
 BuildRequires:  pkgconfig(mm-sound)
-BuildRequires:  pkgconfig(gstreamer-0.10)
-BuildRequires:  pkgconfig(gstreamer-plugins-base-0.10)
-BuildRequires:  pkgconfig(gstreamer-interfaces-0.10)
-BuildRequires:  pkgconfig(gstreamer-app-0.10)
-BuildRequires:  pkgconfig(appcore-efl)
-BuildRequires:  pkgconfig(elementary)
+BuildRequires:  pkgconfig(gstreamer-1.0)
+BuildRequires:  pkgconfig(gstreamer-plugins-base-1.0)
+BuildRequires:  pkgconfig(gstreamer-video-1.0)
+BuildRequires:  pkgconfig(gstreamer-app-1.0)
 BuildRequires:  pkgconfig(mm-session)
 BuildRequires:  pkgconfig(mmutil-imgp)
 BuildRequires:  pkgconfig(audio-session-mgr)
-BuildRequires:  pkgconfig(ecore-x)
-BuildRequires:  pkgconfig(evas)
 BuildRequires:  pkgconfig(iniparser)
 BuildRequires:  pkgconfig(vconf)
 BuildRequires:  pkgconfig(icu-i18n)
-BuildRequires:  pkgconfig(utilX)
-
+BuildRequires:  pkgconfig(capi-media-tool)
 BuildRoot:  %{_tmppath}/%{name}-%{version}-build
 
 %description
@@ -43,11 +38,11 @@ Requires:   %{name} = %{version}-%{release}
 
 ./autogen.sh
 
-CFLAGS+="  -Wall -Werror -D_MM_PLAYER_ALP_PARSER -D_FILE_OFFSET_BITS=64 -DMMFW_DEBUG_MODE -DGST_EXT_TIME_ANALYSIS -DUSE_AUDIO_EFFECT -DEXPORT_API=\"__attribute__((visibility(\\\"default\\\")))\" "; export CFLAGS
+CFLAGS+="  -Wall -Werror -D_FILE_OFFSET_BITS=64 -DEXPORT_API=\"__attribute__((visibility(\\\"default\\\")))\" "; export CFLAGS
 LDFLAGS+="-Wl,--rpath=%{_prefix}/lib -Wl,--hash-style=both -Wl,--as-needed"; export LDFLAGS
 
 # always enable sdk build. This option should go away
-CFLAGS=$CFLAGS LDFLAGS=$LDFLAGS ./configure --prefix=%{_prefix} --disable-static
+CFLAGS=$CFLAGS LDFLAGS=$LDFLAGS ./configure --enable-sdk --prefix=%{_prefix} --disable-static
 
 # Call make instruction with smp support
 make %{?jobs:-j%jobs}
@@ -57,6 +52,7 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}/%{_datadir}/license
 cp -rf %{_builddir}/%{name}-%{version}/LICENSE.APLv2 %{buildroot}/%{_datadir}/license/%{name}
 %make_install
+
 
 %clean
 rm -rf %{buildroot}

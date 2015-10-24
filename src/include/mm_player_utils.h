@@ -46,53 +46,13 @@ if ( x ) \
 	g_free( x ); \
 x = NULL;
 
-#define MMPLAYER_CMD_LOCK(x_player) \
-do \
-{ \
-	GMutex* cmd_lock = ((mm_player_t *)x_player)->cmd_lock; \
-	if (cmd_lock) \
-		g_mutex_lock(cmd_lock); \
-	else \
-	{ \
-		debug_log("no command lock"); \
-		return MM_ERROR_PLAYER_NOT_INITIALIZED;	\
-	} \
-} while (0)
-
-#define MMPLAYER_CMD_UNLOCK(x_player)	g_mutex_unlock( ((mm_player_t*)x_player)->cmd_lock )
-#define MMPLAYER_MSG_POST_LOCK(x_player)	g_mutex_lock( ((mm_player_t*)x_player)->msg_cb_lock )
-#define MMPLAYER_MSG_POST_UNLOCK(x_player)	g_mutex_unlock( ((mm_player_t*)x_player)->msg_cb_lock )
+#define MMPLAYER_CMD_LOCK(x_player) g_mutex_lock(&((mm_player_t *)x_player)->cmd_lock)
+#define MMPLAYER_CMD_UNLOCK(x_player)	g_mutex_unlock( &((mm_player_t*)x_player)->cmd_lock )
+#define MMPLAYER_MSG_POST_LOCK(x_player)	g_mutex_lock( &((mm_player_t*)x_player)->msg_cb_lock )
+#define MMPLAYER_MSG_POST_UNLOCK(x_player)	g_mutex_unlock( &((mm_player_t*)x_player)->msg_cb_lock )
+#define MMPLAYER_PLAYBACK_LOCK(x_player) g_mutex_lock(&((mm_player_t *)x_player)->playback_lock)
+#define MMPLAYER_PLAYBACK_UNLOCK(x_player) g_mutex_unlock( &((mm_player_t*)x_player)->playback_lock )
 #define MMPLAYER_GET_ATTRS(x_player)		((mm_player_t*)x_player)->attrs
-
-#define MMPLAYER_PLAYBACK_LOCK(x_player) \
-do \
-{ \
-	GMutex* playback_lock = ((mm_player_t *)x_player)->playback_lock; \
-	if (playback_lock) \
-	{	\
-		debug_log("lock playback_lock"); \
-		g_mutex_lock(playback_lock); \
-	}	\
-	else \
-	{ \
-		debug_log("no playback lock"); \
-	} \
-} while (0)
-
-#define MMPLAYER_PLAYBACK_UNLOCK(x_player) \
-do \
-{ \
-	GMutex* playback_lock = ((mm_player_t *)x_player)->playback_lock; \
-	if (playback_lock) \
-	{	\
-		g_mutex_unlock( ((mm_player_t*)x_player)->playback_lock );	\
-		debug_log("unlock playback_lock"); \
-	}	\
-	else \
-	{ \
-		debug_warning("can't unlock> no playback lock"); \
-	} \
-} while (0)
 
 #if 0
 #define MMPLAYER_FENTER();					debug_fenter();
@@ -180,31 +140,6 @@ if ( x_player->cmd == MMPLAYER_COMMAND_UNREALIZE || x_player->cmd == MMPLAYER_CO
 	goto ERROR;  \
 }
 
-/* pad probe for pipeilne debugging */
-gboolean __util_gst_pad_probe(GstPad *pad, GstBuffer *buffer, gpointer u_data);
-
-#define MM_PROBE_DEFAULT			(0)
-#define MM_PROBE_TIMESTAMP			(1)
-#define MM_PROBE_BUFFERSIZE			(1 << 1)
-#define MM_PROBE_CAPS				(1 << 2)
-#define MM_PROBE_BUFFER_DURATION 	(1 << 3)
-#define MM_PROBE_DROP_BUFFER		(1 << 4)
-#define MM_PROBE_CLOCK_TIME			(1 << 5)
-/* ... add more */
-
-/* messages are treated as warnings bcz those code should not be checked in.
- * and no error handling will supported for same manner.
- */
-#define MMPLAYER_ADD_PROBE(x_pad, x_flag) \
-debug_warning("adding pad probe\n"); \
-if ( ! gst_pad_add_buffer_probe(x_pad, \
-	G_CALLBACK(__util_gst_pad_probe), \
-	(gpointer)x_flag) ) \
-{ \
-	debug_error("failed to add pad probe\n"); \
-}
-
-
 /* generating dot */
 #define MMPLAYER_GENERATE_DOT_IF_ENABLED( x_player, x_name ) \
 if ( x_player->ini.generate_dot ) \
@@ -267,15 +202,18 @@ debug_log("-- prev %s, current %s, pending %s, target %s --\n", \
 /* streaming */
 #define MMPLAYER_IS_STREAMING(x_player)  			__is_streaming(x_player)
 #define MMPLAYER_IS_RTSP_STREAMING(x_player) 	__is_rtsp_streaming(x_player)
-#define MMPLAYER_IS_WFD_STREAMING(x_player) 	__is_wfd_streaming(x_player)
 #define MMPLAYER_IS_HTTP_STREAMING(x_player)  	__is_http_streaming(x_player)
 #define MMPLAYER_IS_HTTP_PD(x_player)			__is_http_progressive_down(x_player)
 #define MMPLAYER_IS_HTTP_LIVE_STREAMING(x_player)  __is_http_live_streaming(x_player)
 #define MMPLAYER_IS_LIVE_STREAMING(x_player)  	__is_live_streaming(x_player)
 #define MMPLAYER_IS_DASH_STREAMING(x_player)  	__is_dash_streaming(x_player)
-#define MMPLAYER_IS_SMOOTH_STREAMING(x_player)   __is_smooth_streaming(x_player)
+#define MMPLAYER_IS_SMOOTH_STREAMING(x_player)	__is_smooth_streaming(x_player)
+#define MMPLAYER_IS_ADAPTIVE_STREAMING(x_player)	(__is_http_live_streaming(x_player) || __is_dash_streaming(x_player) || __is_smooth_streaming(x_player))
+
+#define MMPLAYER_IS_MS_BUFF_SRC(x_player)		__is_ms_buff_src(x_player)
 
 #define MMPLAYER_URL_HAS_DASH_SUFFIX(x_player) __has_suffix(x_player, "mpd")
+#define MMPLAYER_URL_HAS_SS_SUFFIX(x_player)	(__has_suffix(x_player, "ism/manifest") || __has_suffix(x_player, "isml/manifest"))
 #define MMPLAYER_URL_HAS_HLS_SUFFIX(x_player) __has_suffix(x_player, "m3u8")
 
 /* etc */
@@ -301,7 +239,6 @@ enum
 };
 
 bool util_is_sdp_file ( const char *path );
-int64_t uti_get_time ( void );
 int util_get_rank_increase ( const char *factory_class );
 int util_factory_rank_compare(GstPluginFeature *f1, GstPluginFeature *f2); // @
 int util_exist_file_path(const char *file_path);
@@ -312,9 +249,6 @@ int util_is_midi_type_by_file(const char *file_path);
 char** util_get_cookie_list ( const char *cookies );
 bool util_check_valid_url ( const char *proxy );
 const char* util_get_charset(const char *file_path);
-
-int util_get_is_connected_external_display(void);
-gboolean util_is_miracast_connected(void);
 int util_get_pixtype(unsigned int fourcc);
 
 #ifdef __cplusplus

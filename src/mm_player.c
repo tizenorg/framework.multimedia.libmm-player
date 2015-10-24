@@ -33,6 +33,8 @@
 #include "mm_player_ini.h"
 #include "mm_debug.h"
 #include "mm_player_capture.h"
+#include "mm_player_tracks.h"
+#include "mm_player_es.h"
 
 int mm_player_create(MMHandleType *player)
 {
@@ -41,8 +43,6 @@ int mm_player_create(MMHandleType *player)
 
 	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
 
-	if (!g_thread_supported ())
-		g_thread_init (NULL);
 
 	/* alloc player structure */
 	new_player = g_malloc(sizeof(mm_player_t));
@@ -54,31 +54,14 @@ int mm_player_create(MMHandleType *player)
 	memset(new_player, 0, sizeof(mm_player_t));
 
 	/* create player lock */
-	new_player->cmd_lock = g_mutex_new();
-
-	if ( ! new_player->cmd_lock )
-	{
-		debug_error("failed to create player lock\n");
-		goto ERROR;
-	}
+	g_mutex_init(&new_player->cmd_lock);
 
 	/* create player lock */
-	new_player->playback_lock = g_mutex_new();
+	g_mutex_init(&new_player->playback_lock);
 
-	if ( ! new_player->playback_lock )
-	{
-		debug_error("failed to create playback_lock\n");
-		goto ERROR;
-	}
 
 	/* create msg callback lock */
-	new_player->msg_cb_lock = g_mutex_new();
-
-	if ( ! new_player->msg_cb_lock )
-	{
-		debug_error("failed to create msg cb lock\n");
-		goto ERROR;
-	}
+	g_mutex_init(&new_player->msg_cb_lock);
 
 	/* load ini files */
 	result = mm_player_ini_load(&new_player->ini);
@@ -113,25 +96,15 @@ ERROR:
 
 	if ( new_player )
 	{
-		if (new_player->cmd_lock)
-		{
-			g_mutex_free(new_player->cmd_lock);
-			new_player->cmd_lock = NULL;
-		}
-
-		if (new_player->playback_lock)
-		{
-			g_mutex_free(new_player->playback_lock);
-			new_player->playback_lock = NULL;
-		}
-
 		_mmplayer_destroy( (MMHandleType)new_player );
+		g_mutex_clear(&new_player->cmd_lock);
+		g_mutex_clear(&new_player->playback_lock);
 
 		MMPLAYER_FREEIF( new_player );
 	}
 
 	*player = (MMHandleType)0;
-	return MM_ERROR_PLAYER_NO_FREE_SPACE; // are you sure?
+	return MM_ERROR_PLAYER_NO_FREE_SPACE;
 }
 
 int  mm_player_destroy(MMHandleType player)
@@ -146,8 +119,8 @@ int  mm_player_destroy(MMHandleType player)
 
 	MMPLAYER_CMD_UNLOCK( player );
 
-	g_mutex_free(((mm_player_t*)player)->cmd_lock);
-	g_mutex_free(((mm_player_t*)player)->playback_lock);
+	g_mutex_clear(&((mm_player_t*)player)->cmd_lock);
+	g_mutex_clear(&((mm_player_t*)player)->playback_lock);
 
 	memset( (mm_player_t*)player, 0x00, sizeof(mm_player_t) );
 
@@ -228,6 +201,21 @@ int mm_player_set_audio_stream_callback(MMHandleType player, mm_player_audio_str
 	return result;
 }
 
+int mm_player_set_audio_stream_callback_ex(MMHandleType player, bool sync, mm_player_audio_stream_callback_ex callback, void *user_param)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_audiostream_cb_ex(player, sync, callback, user_param);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
 int mm_player_set_video_stream_callback(MMHandleType player, mm_player_video_stream_callback callback, void *user_param)
 {
 	int result = MM_ERROR_NONE;
@@ -237,6 +225,21 @@ int mm_player_set_video_stream_callback(MMHandleType player, mm_player_video_str
 	MMPLAYER_CMD_LOCK( player );
 
 	result = _mmplayer_set_videostream_cb(player, callback, user_param);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_video_frame_render_error_callback(MMHandleType player, mm_player_video_frame_render_error_callback callback, void *user_param)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_videoframe_render_error_cb(player, callback, user_param);
 
 	MMPLAYER_CMD_UNLOCK( player );
 
@@ -258,7 +261,7 @@ int mm_player_do_video_capture(MMHandleType player)
 	return result;
 }
 
-int mm_player_set_buffer_need_data_callback(MMHandleType player, mm_player_buffer_need_data_callback callback, void * user_param)
+int mm_player_set_prepare_buffering_time(MMHandleType player, int second)
 {
 	int result = MM_ERROR_NONE;
 
@@ -266,14 +269,14 @@ int mm_player_set_buffer_need_data_callback(MMHandleType player, mm_player_buffe
 
 	MMPLAYER_CMD_LOCK( player );
 
-	result = _mmplayer_set_buffer_need_data_cb(player, callback, user_param);
+	result = _mmplayer_set_prepare_buffering_time(player, second);
 
 	MMPLAYER_CMD_UNLOCK( player );
 
 	return result;
 }
 
-int mm_player_set_buffer_enough_data_callback(MMHandleType player, mm_player_buffer_enough_data_callback callback, void * user_param)
+int mm_player_set_runtime_buffering_mode(MMHandleType player, MMPlayerBufferingMode mode, int second)
 {
 	int result = MM_ERROR_NONE;
 
@@ -281,23 +284,7 @@ int mm_player_set_buffer_enough_data_callback(MMHandleType player, mm_player_buf
 
 	MMPLAYER_CMD_LOCK( player );
 
-	result = _mmplayer_set_buffer_enough_data_cb(player, callback, user_param);
-
-	MMPLAYER_CMD_UNLOCK( player );
-
-	return result;
-}
-
-
-int mm_player_set_buffer_seek_data_callback(MMHandleType player, mm_player_buffer_seek_data_callback callback, void * user_param)
-{
-	int result = MM_ERROR_NONE;
-
-	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
-
-	MMPLAYER_CMD_LOCK( player );
-
-	result = _mmplayer_set_buffer_seek_data_cb(player, callback, user_param);
+	result = _mmplayer_set_runtime_buffering_mode(player, mode, second);
 
 	MMPLAYER_CMD_UNLOCK( player );
 
@@ -403,11 +390,7 @@ int mm_player_push_buffer(MMHandleType player, unsigned char *buf, int size)
 
 	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
 
-	//MMPLAYER_CMD_LOCK( player );
-
 	result = _mmplayer_push_buffer(player, buf, size);
-
-	//MMPLAYER_CMD_UNLOCK( player );
 
 	return result;
 }
@@ -624,6 +607,49 @@ int mm_player_adjust_subtitle_position(MMHandleType player, MMPlayerPosFormatTyp
 	return result;
 }
 
+int mm_player_adjust_video_position(MMHandleType player, int offset)
+{
+	int result = MM_ERROR_NONE;
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_adjust_video_postion(player, offset);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_subtitle_silent(MMHandleType player, int silent)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_subtitle_silent(player, silent);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_subtitle_silent(MMHandleType player, int* silent)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_subtitle_silent(player, silent);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
 int mm_player_set_attribute(MMHandleType player,  char **err_attr_name, const char *first_attribute_name, ...)
 {
 	int result = MM_ERROR_NONE;
@@ -681,6 +707,110 @@ int mm_player_get_pd_status(MMHandleType player, guint64 *current_pos, guint64 *
 	return result;
 }
 
+int mm_player_get_track_count(MMHandleType player, MMPlayerTrackType type, int *count)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(count, MM_ERROR_COMMON_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_track_count(player, type, count);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_select_track(MMHandleType player, MMPlayerTrackType type, int index)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_select_track(player, type, index);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+#ifdef _MULTI_TRACK
+int mm_player_track_add_subtitle_language(MMHandleType player, int index)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_track_add_subtitle_language(player, index);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_track_remove_subtitle_language(MMHandleType player, int index)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_track_remove_subtitle_language(player, index);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+
+}
+#endif
+int mm_player_get_current_track(MMHandleType player, MMPlayerTrackType type, int *index)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(index, MM_ERROR_COMMON_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_current_track(player, type, index);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_track_language_code(MMHandleType player,  MMPlayerTrackType type, int index, char **code)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_track_language_code(player, type, index, code);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_ignore_session(MMHandleType player)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	result = _mmplayer_asm_ignore_session(player);
+
+	return result;
+}
+
 int mm_player_set_display_zoom(MMHandleType player, float level, int x, int y)
 {
 	int result = MM_ERROR_NONE;
@@ -706,6 +836,93 @@ int mm_player_get_display_zoom(MMHandleType player, float *level, int *x, int *y
 	MMPLAYER_CMD_LOCK( player );
 
 	result = _mmplayer_get_display_zoom(player, level, x, y);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_video_share_master_clock(MMHandleType player,
+						long long clock,
+						long long clock_delta,
+						long long video_time,
+						long long media_clock,
+						long long audio_time)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_video_share_master_clock(player, clock, clock_delta, video_time, media_clock, audio_time);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_video_share_master_clock(MMHandleType player,
+						long long *video_time,
+						long long *media_clock,
+						long long *audio_time)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(video_time, MM_ERROR_COMMON_INVALID_ARGUMENT);
+	return_val_if_fail(media_clock, MM_ERROR_COMMON_INVALID_ARGUMENT);
+	return_val_if_fail(audio_time, MM_ERROR_COMMON_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_video_share_master_clock(player, video_time, media_clock, audio_time);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_video_rotate_angle(MMHandleType player, int *angle)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(angle, MM_ERROR_COMMON_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_video_rotate_angle(player, angle);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_video_hub_download_mode(MMHandleType player, bool mode)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_video_hub_download_mode(player, mode);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_enable_sync_handler(MMHandleType player, bool enable)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_enable_sync_handler(player, enable);
 
 	MMPLAYER_CMD_UNLOCK( player );
 
@@ -759,6 +976,38 @@ int mm_player_get_next_uri(MMHandleType player, char **uri)
 	return result;
 
 }
+#ifdef _MULTI_TRACK
+int mm_player_track_foreach_selected_subtitle_language(MMHandleType player, mm_player_track_selected_subtitle_language_callback callback, void *user_param)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_track_foreach_selected_subtitle_language(player, callback, user_param);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+#endif
+
+int mm_player_has_closed_caption(MMHandleType player, bool *exist)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(exist, MM_ERROR_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_has_closed_caption(player, exist);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
 
 int mm_player_enable_media_packet_video_stream(MMHandleType player, bool enable)
 {
@@ -775,3 +1024,213 @@ int mm_player_enable_media_packet_video_stream(MMHandleType player, bool enable)
 
 	return result;
 }
+
+void * mm_player_media_packet_video_stream_internal_buffer_ref(void *buffer)
+{
+	void * result;
+	result = _mm_player_media_packet_video_stream_internal_buffer_ref(buffer);
+
+	return result;
+}
+
+void mm_player_media_packet_video_stream_internal_buffer_unref(void *buffer)
+{
+	_mm_player_media_packet_video_stream_internal_buffer_unref(buffer);
+}
+
+int mm_player_submit_packet(MMHandleType player, media_packet_h packet)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	/* no lock here, otherwise callback for the "need-data" signal of appsrc will be blocking */
+	result = _mmplayer_submit_media_stream_packet(player, packet);
+
+	return result;
+}
+
+int mm_player_set_video_info (MMHandleType player, media_format_h format)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_media_stream_video_info(player, format);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+
+}
+
+int mm_player_set_audio_info (MMHandleType player, media_format_h format)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_media_stream_audio_info(player, format);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_media_stream_buffer_max_size(MMHandleType player, MMPlayerStreamType type, unsigned long long max_size)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_media_stream_max_size(player, type, max_size);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_media_stream_buffer_max_size(MMHandleType player, MMPlayerStreamType type, unsigned long long *max_size)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(max_size, MM_ERROR_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_media_stream_max_size(player, type, max_size);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_media_stream_buffer_min_percent(MMHandleType player, MMPlayerStreamType type, unsigned min_percent)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_media_stream_min_percent(player, type, min_percent);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_get_media_stream_buffer_min_percent(MMHandleType player, MMPlayerStreamType type, unsigned int *min_percent)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail(min_percent, MM_ERROR_INVALID_ARGUMENT);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_get_media_stream_min_percent(player, type, min_percent);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_media_stream_buffer_status_callback(MMHandleType player, MMPlayerStreamType type, mm_player_media_stream_buffer_status_callback callback, void * user_param)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_media_stream_buffer_status_cb(player, type, callback, user_param);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_media_stream_seek_data_callback(MMHandleType player, MMPlayerStreamType type, mm_player_media_stream_seek_data_callback callback, void * user_param)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_media_stream_seek_data_cb(player, type, callback, user_param);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_audio_stream_changed_callback(MMHandleType player, mm_player_stream_changed_callback callback, void *user_param)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_audiostream_changed_cb(player, callback, user_param);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_video_stream_changed_callback(MMHandleType player, mm_player_stream_changed_callback callback, void *user_param)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_videostream_changed_cb(player, callback, user_param);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_pcm_spec(MMHandleType player, int samplerate, int channel)
+{
+	int result = MM_ERROR_NONE;
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_pcm_spec(player, samplerate, channel);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+

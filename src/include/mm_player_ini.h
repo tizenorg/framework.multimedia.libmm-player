@@ -32,13 +32,13 @@
 #endif
 
 
-#define MM_PLAYER_INI_DEFAULT_PATH	"/usr/etc/mmfw_player.ini"
+#define MM_PLAYER_INI_DEFAULT_PATH				"/usr/etc/mmfw_player.ini"
 #define MM_PLAYER_INI_DEFAULT_AUDIOEFFECT_PATH	"/usr/etc/mmfw_player_audio_effect.ini"
 
-#define PLAYER_INI_MAX_STRLEN	100
+#define PLAYER_INI_MAX_STRLEN		100
 #define PLAYER_INI_MAX_PARAM_STRLEN	256
 
-#define PLAYER_INI_MAX_ELEMENT	10
+#define PLAYER_INI_MAX_ELEMENT		10
 
 /* NOTE : MMPlayer has no initalizing API for library itself
  * so we cannot decide when those ini values to be released.
@@ -50,43 +50,52 @@
 enum keyword_type
 {
 	KEYWORD_EXCLUDE,	// for element exclude keyworld
-	KEYWORD_DUMP		// for dump element keyworld
+	KEYWORD_DUMP,		// for dump element keyworld
+	KEYWORD_UNSUPPORTED_CODEC	// for un-supported codec
 };
 
-/* @ mark means the item has tested */
 typedef struct __mm_player_ini
 {
 	/* general */
 	gchar videosink_element_x[PLAYER_INI_MAX_STRLEN];
 	gchar videosink_element_evas[PLAYER_INI_MAX_STRLEN];
 	gchar videosink_element_fake[PLAYER_INI_MAX_STRLEN];
-	gchar name_of_audio_resampler[PLAYER_INI_MAX_STRLEN];
-	gchar name_of_audiosink[PLAYER_INI_MAX_STRLEN];
-	gchar name_of_drmsrc[PLAYER_INI_MAX_STRLEN];
-	gchar name_of_video_converter[PLAYER_INI_MAX_STRLEN];
+	gchar videoconverter_element[PLAYER_INI_MAX_STRLEN];
+	gchar audioresampler_element[PLAYER_INI_MAX_STRLEN];
+	gchar audiosink_element[PLAYER_INI_MAX_STRLEN];
+
 	gboolean skip_rescan;
+	gboolean disable_segtrap;
 	gboolean generate_dot;
-	gboolean provide_clock_for_music;
-	gboolean provide_clock_for_movie;
+	gboolean use_system_clock;
 	gint live_state_change_timeout;
 	gint localplayback_state_change_timeout;
 	gint delay_before_repeat;
 	gint eos_delay;
-	gboolean multiple_codec_supported;
+	gboolean async_start;
 
 	gchar gst_param[5][PLAYER_INI_MAX_PARAM_STRLEN];
 	gchar exclude_element_keyword[PLAYER_INI_MAX_ELEMENT][PLAYER_INI_MAX_STRLEN];
-	gboolean async_start;
-	gboolean disable_segtrap;
+	gchar unsupported_codec_keyword[PLAYER_INI_MAX_ELEMENT][PLAYER_INI_MAX_STRLEN];
+
+	/* http streaming */
+	gchar httpsrc_element[PLAYER_INI_MAX_STRLEN];
+	gchar http_file_buffer_path[PLAYER_INI_MAX_STRLEN];
+	gdouble http_buffering_limit;
+	guint http_max_size_bytes;
+	gdouble http_buffering_time;
+	gint http_timeout;
 
 	/* audio effect */
-	gchar name_of_audio_effect[PLAYER_INI_MAX_STRLEN];
-	gchar name_of_audio_effect_sec[PLAYER_INI_MAX_STRLEN];
+	gchar audioeffect_element[PLAYER_INI_MAX_STRLEN];
+	gchar audioeffect_element_custom[PLAYER_INI_MAX_STRLEN];
 
+	/* audio effect preset mode */
 	gboolean use_audio_effect_preset;
 	gboolean audio_effect_preset_list[MM_AUDIO_EFFECT_PRESET_NUM];
 	gboolean audio_effect_preset_earphone_only_list[MM_AUDIO_EFFECT_PRESET_NUM];
 
+	/* audio effect custom mode */
 	gboolean use_audio_effect_custom;
 	gboolean audio_effect_custom_list[MM_AUDIO_EFFECT_CUSTOM_NUM];
 	gboolean audio_effect_custom_earphone_only_list[MM_AUDIO_EFFECT_CUSTOM_NUM];
@@ -97,42 +106,6 @@ typedef struct __mm_player_ini
 	gint audio_effect_custom_min_level_list[MM_AUDIO_EFFECT_CUSTOM_NUM];
 	gint audio_effect_custom_max_level_list[MM_AUDIO_EFFECT_CUSTOM_NUM];
 
-	gboolean use_audio_effect_square;
-	gint audio_effect_square_max_row;
-	gint audio_effect_square_max_col;
-
-	/* http streaming */
-	gchar name_of_httpsrc[PLAYER_INI_MAX_STRLEN];
-	gchar http_file_buffer_path[PLAYER_INI_MAX_STRLEN];
-	gdouble http_buffering_limit;
-	guint http_max_size_bytes;
-	gdouble http_buffering_time;
-	gint http_timeout;
-
-	/* rtsp streaming */
-	gchar name_of_rtspsrc[PLAYER_INI_MAX_STRLEN];
-	guint rtsp_buffering_time;
-	guint rtsp_rebuffering_time;
-	gboolean rtsp_do_typefinding;
-	gboolean rtsp_error_concealment; /* testing purpose */
-
-	/* hw accelation */
-	gboolean use_video_hw_accel;
-
-	/* priority */
-	gboolean use_priority_setting;
-	gint demux_priority;
-	gint audiosink_priority;
-	gint videosink_priority;
-	gint ringbuffer_priority;
-
-	/* subtitle */
-	gint mirroring_width;
-	gint mirroring_height;
-	guint font_color;
-	guint font_background_color;
-	gboolean external_subtitle;
-
 	/* dump buffer for debug */
 	gchar dump_element_keyword[PLAYER_INI_MAX_ELEMENT][PLAYER_INI_MAX_STRLEN];
 	gchar dump_element_path[PLAYER_INI_MAX_STRLEN];
@@ -141,74 +114,48 @@ typedef struct __mm_player_ini
 
 /* default values if each values are not specified in inifile */
 /* general */
-#define DEFAULT_AUDIO_EFFECT_ELEMENT			""
-#define DEFAULT_USE_AUDIO_EFFECT_PRESET			FALSE
-#define DEFAULT_AUDIO_EFFECT_PRESET_LIST		""
+#define DEFAULT_AUDIO_EFFECT_ELEMENT					""
+#define DEFAULT_USE_AUDIO_EFFECT_PRESET					FALSE
+#define DEFAULT_AUDIO_EFFECT_PRESET_LIST				""
 #define DEFAULT_AUDIO_EFFECT_PRESET_LIST_EARPHONE_ONLY	""
-#define DEFAULT_USE_AUDIO_EFFECT_CUSTOM			FALSE
-#define DEFAULT_AUDIO_EFFECT_CUSTOM_LIST		""
+#define DEFAULT_USE_AUDIO_EFFECT_CUSTOM					FALSE
+#define DEFAULT_AUDIO_EFFECT_CUSTOM_LIST				""
 #define DEFAULT_AUDIO_EFFECT_CUSTOM_LIST_EARPHONE_ONLY	""
-#define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_BAND_NUM		0
+#define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_BAND_NUM			0
 #define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_BAND_WIDTH		""
 #define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_BAND_FREQ		""
-#define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_MIN		0
-#define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_MAX		0
-#define DEFAULT_AUDIO_EFFECT_CUSTOM_EXT_NUM		0
-#define DEFAULT_USE_AUDIO_EFFECT_SQUARE			FALSE
-#define DEFAULT_AUDIO_EFFECT_SQUARE_ROW_MAX		0
-#define DEFAULT_AUDIO_EFFECT_SQUARE_COL_MAX		0
-#define DEFAULT_USE_SINK_HANDLER			TRUE
-#define DEFAULT_SKIP_RESCAN				TRUE
-#define DEFAULT_GENERATE_DOT				FALSE
-#define DEFAULT_PROVIDE_CLOCK_FOR_MUSIC		TRUE
-#define DEFAULT_PROVIDE_CLOCK_FOR_MOVIE		FALSE
-#define DEFAULT_DELAY_BEFORE_REPEAT	 		50 /* msec */
-#define DEFAULT_EOS_DELAY 				150 /* msec */
-#define DEFAULT_DRMSRC					"drmsrc"
-#define DEFAULT_VIDEOSINK_X				"xvimagesink"
-#define DEFAULT_VIDEOSINK_EVAS				"evasimagesink"
-#define DEFAULT_VIDEOSINK_FAKE				"fakesink"
-#define DEFAULT_AUDIORESAMPLER			"audioresample"
-#define DEFAULT_AUDIOSINK				"avsysaudiosink"
-#define DEFAULT_GST_PARAM				""
-#define DEFAULT_EXCLUDE_KEYWORD				""
-#define DEFAULT_ASYNC_START				TRUE
-#define DEFAULT_DISABLE_SEGTRAP				TRUE
-#define DEFAULT_VIDEO_CONVERTER				""
-#define DEFAULT_MULTIPLE_CODEC_SUPPORTED 		TRUE
-#define DEFAULT_LIVE_STATE_CHANGE_TIMEOUT 		30 /* sec */
-#define DEFAULT_LOCALPLAYBACK_STATE_CHANGE_TIMEOUT 	10 /* sec */
+#define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_MIN				0
+#define DEFAULT_AUDIO_EFFECT_CUSTOM_EQ_MAX				0
+#define DEFAULT_AUDIO_EFFECT_CUSTOM_EXT_NUM				0
+#define DEFAULT_USE_SINK_HANDLER						TRUE
+#define DEFAULT_SKIP_RESCAN								TRUE
+#define DEFAULT_GENERATE_DOT							FALSE
+#define DEFAULT_USE_SYSTEM_CLOCK						TRUE
+#define DEFAULT_DELAY_BEFORE_REPEAT	 					50 /* msec */
+#define DEFAULT_EOS_DELAY 								150 /* msec */
+#define DEFAULT_VIDEOSINK_X								"xvimagesink"
+#define DEFAULT_VIDEOSINK_EVAS							"evaspixmapsink"
+#define DEFAULT_VIDEOSINK_FAKE							"fakesink"
+#define DEFAULT_AUDIORESAMPLER							"audioresample"
+#define DEFAULT_AUDIOSINK								"pulsesink"
+#define DEFAULT_GST_PARAM								""
+#define DEFAULT_EXCLUDE_KEYWORD							""
+#define DEFAULT_UNSUPPORTED_CODEC_KEYWORD				""
+#define DEFAULT_ASYNC_START								TRUE
+#define DEFAULT_DISABLE_SEGTRAP							TRUE
+#define DEFAULT_VIDEO_CONVERTER							""
+#define DEFAULT_LIVE_STATE_CHANGE_TIMEOUT 				30 /* sec */
+#define DEFAULT_LOCALPLAYBACK_STATE_CHANGE_TIMEOUT 		10 /* sec */
 /* http streaming */
-#define DEFAULT_HTTPSRC				"souphttpsrc"
-#define DEFAULT_HTTP_FILE_BUFFER_PATH		"/opt/usr/media"
-#define DEFAULT_HTTP_BUFFERING_LIMIT	99.0		/* percent */
-#define DEFAULT_HTTP_MAX_SIZE_BYTES		1048576		/* bytes : 1 MBytes  */
-#define DEFAULT_HTTP_BUFFERING_TIME		1.2			/* sec */
-#define DEFAULT_HTTP_TIMEOUT			-1			/* infinite retry */
-/* rtsp streaming */
-#define DEFAULT_RTSPSRC				"secrtspsrc"
-#define DEFAULT_RTSP_BUFFERING			5000 	/* msec */
-#define DEFAULT_RTSP_REBUFFERING		15000 	/* msec */
-#define DEFAULT_RTSP_DO_TYPEFINDING		FALSE
-#define DEFAULT_RTSP_ERROR_CONCEALMENT		TRUE
-/* hw accel */
-#define DEFAULT_USE_VIDEO_HW_ACCEL	FALSE
-/* priority */
-#define DEFAULT_USE_PRIORITY_SETTING	FALSE
-#define DEFAULT_PRIORITY_DEMUX		96
-#define DEFAULT_PRIORITY_VIDEO_SINK	97
-#define DEFAULT_PRIORITY_AUDIO_SINK	98
-#define DEFAULT_PRIORITY_RINGBUFFER	99
-/* subtitle */
-#define DEFAULT_MIRRORING_WIDTH			1920
-#define DEFAULT_MIRRORING_HEIGHT			1080
-#define DEFAULT_FONT_COLOR		"0xffffffff"
-#define DEFAULT_FONT_BACKGROUND_COLOR		"0x0"
-#define DEFAULT_EXTERNAL_SUBTITLE		FALSE
-
+#define DEFAULT_HTTPSRC									"souphttpsrc"
+#define DEFAULT_HTTP_FILE_BUFFER_PATH 					"/opt/usr/media"
+#define DEFAULT_HTTP_BUFFERING_LIMIT 					99.0 /* percent */
+#define DEFAULT_HTTP_MAX_SIZE_BYTES						1048576 /* bytes : 1 MBytes  */
+#define DEFAULT_HTTP_BUFFERING_TIME						1.2 /* sec */
+#define DEFAULT_HTTP_TIMEOUT							-1 /* infinite retry */
 /* dump buffer for debug */
-#define DEFAULT_DUMP_ELEMENT_KEYWORD				""
-#define DEFAULT_DUMP_ELEMENT_PATH				"/opt/usr/media/"
+#define DEFAULT_DUMP_ELEMENT_KEYWORD					""
+#define DEFAULT_DUMP_ELEMENT_PATH						"/opt/usr/media/"
 
 /* NOTE : following content should be same with above default values */
 /* FIXIT : need smarter way to generate default ini file. */
@@ -217,19 +164,15 @@ typedef struct __mm_player_ini
 "\
 [general] \n\
 \n\
-use sink handler = yes \n\
-\n\
 disable segtrap = yes ; same effect with --gst-disable-segtrap \n\
 \n\
 ; set default video sink but, it can be replaced with others selected by application\n\
-; 0:v4l2sink, 1:ximagesink, 2:xvimagesink, 3:fakesink 4:evasimagesink 5:glimagesink\n\
+; 0:v4l2sink, 1:ximagesink, 2:xvimagesink, 3:fakesink 4:evaspixmapsink 5:glimagesink\n\
 videosink element = 2 \n\
 \n\
 video converter element = \n\
 \n\
-audiosink element = avsysaudiosink \n\
-\n\
-drmsrc element = drmsrc \n\
+audiosink element = pulsesink \n\
 \n\
 ; if yes. gstreamer will not update registry \n\
 skip rescan = yes \n\
@@ -239,23 +182,27 @@ delay before repeat = 50 ; msec\n\
 ; comma separated list of tocken which elemnts has it in it's name will not be used \n\
 element exclude keyword = \n\
 \n\
+; comma separated list of tocken \n\
+unsupported codec keyword = \n\
+\n\
 async start = yes \n\
 \n\
-multiple codec supported = yes \n\
-\n\
 ; parameters for initializing gstreamer \n\
-gstparam1 = \n\
+gstparam1 = --gst-debug=2\n\
 gstparam2 = \n\
 gstparam3 = \n\
 gstparam4 = \n\
 gstparam5 = \n\
 \n\
 ; generating dot file representing pipeline state \n\
+; export GST_DEBUG_DUMP_DOT_DIR=/tmp/\n\
 generate dot = no \n\
 \n\
-; parameter for clock provide in audiosink \n\
-provide clock for music = yes \n\
-provide clock for movie = no \n\
+; parameter is for only video to be determined \n\
+; which clock will be used \n\
+; if yes, system clock will be used \n\
+; apart from this, audiosink is clock provider for audio \n\
+use system clock = yes \n\
 \n\
 ; allowed timeout for changing pipeline state \n\
 live state change timeout = 30 ; sec \n\
@@ -279,47 +226,6 @@ http max size bytes = 1048576 ; bytes\n\
 http buffering time = 1.2 \n\
 \n\
 http timeout = -1 ; infinite retry \n\
-\n\
-\n\
-[rtsp streaming] \n\
-\n\
-rtspsrc element = secrtspsrc \n\
-\n\
-rtsp buffering time = 5000; msec \n\
-\n\
-rtsp rebuffering time = 15000; msec \n\
-\n\
-rtsp do typefinding = no; if no, caps on rtspsrc:src pad will be used for autoplugging \n\
-\n\
-rtsp error concealment = yes \n\
-\n\
-\n\
-[hw accelation] \n\
-use video hw accel = yes \n\
-\n\
-\n\
-[priority] \n\
-\n\
-use priority setting = no \n\
-\n\
-demux = 95 \n\
-\n\
-videosink = 96 \n\
-\n\
-audiosink = 97\n\
-\n\
-ringbuffer = 98 \n\
-\n\
-\n\
-[subtitle] \n\
-\n\
-mirroring width = 1920 \n\
-\n\
-mirroring height = 1080 \n\
-\n\
-font color = 0xffffffff \n\
-\n\
-font background color = 0x00000000 \n\
 \n\
 "
 

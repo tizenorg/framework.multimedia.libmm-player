@@ -132,6 +132,7 @@ void __mm_player_streaming_initialize (mm_player_streaming_t* streamer)
 
 	streamer->is_buffering = FALSE;
 	streamer->is_buffering_done = FALSE;
+	streamer->is_adaptive_streaming = FALSE;
 	streamer->buffering_percent = -1;
 
 	MMPLAYER_FLEAVE();
@@ -163,6 +164,8 @@ void __mm_player_streaming_deinitialize (mm_player_streaming_t* streamer)
 
 	streamer->is_buffering = FALSE;
 	streamer->is_buffering_done = FALSE;
+	streamer->is_adaptive_streaming = FALSE;
+
 	streamer->buffering_percent = -1;
 
 	MMPLAYER_FLEAVE();
@@ -296,7 +299,7 @@ streaming_set_buffer_percent(	mm_player_streaming_t* streamer,
 		return;
 	}
 
-	factory_name = GST_PLUGIN_FEATURE_NAME(gst_element_get_factory(buffer_handle->buffer));
+	factory_name = GST_OBJECT_NAME(gst_element_get_factory(buffer_handle->buffer));
 
 	if (!factory_name)
 	{
@@ -311,26 +314,20 @@ streaming_set_buffer_percent(	mm_player_streaming_t* streamer,
 
 	streaming_check_buffer_percent(low_percent, high_percent, &confirmed_low, &confirmed_high);
 
-	// if use-buffering is disabled, this settings do not have any meaning.
+	/* if use-buffering is disabled, this settings do not have any meaning. */
 	debug_log("target buffer elem : %s (%2.3f ~ %2.3f)",
 		GST_ELEMENT_NAME(buffer_handle->buffer), confirmed_low, confirmed_high);
 
 	if ((confirmed_low == DEFAULT_BUFFER_LOW_PERCENT) ||
 		(buffer_handle->buffer_low_percent != confirmed_low))
 	{
-		if (g_strrstr(factory_name, "queue2"))
-			g_object_set (G_OBJECT(buffer_handle->buffer), "low-percent", confirmed_low, NULL);
-		else
-			g_object_set (G_OBJECT(buffer_handle->buffer), "low-percent", (gint)confirmed_low, NULL);
+		g_object_set (G_OBJECT(buffer_handle->buffer), "low-percent", (gint)confirmed_low, NULL);
 	}
 
 	if ((confirmed_high == DEFAULT_BUFFER_HIGH_PERCENT) ||
 		(buffer_handle->buffer_high_percent != confirmed_high))
 	{
-		if (g_strrstr(factory_name, "queue2"))
-			g_object_set (G_OBJECT(buffer_handle->buffer), "high-percent", confirmed_high, NULL);
-		else
-			g_object_set (G_OBJECT(buffer_handle->buffer), "high-percent", (gint)confirmed_high, NULL);
+		g_object_set (G_OBJECT(buffer_handle->buffer), "high-percent", (gint)confirmed_high, NULL);
 	}
 
 	buffer_handle->buffer_low_percent = confirmed_low;
@@ -362,7 +359,7 @@ streaming_set_queue2_queue_type (mm_player_streaming_t* streamer, gboolean use_f
 		return;
 	}
 
-	factory_name = GST_PLUGIN_FEATURE_NAME(gst_element_get_factory(buffer_handle->buffer));
+	factory_name = GST_OBJECT_NAME(gst_element_get_factory(buffer_handle->buffer));
 
 	if (!factory_name)
 	{
@@ -421,7 +418,7 @@ streaming_set_queue2_queue_type (mm_player_streaming_t* streamer, gboolean use_f
 		debug_log("[Queue2] use file ring buffer for buffering.");
 
 	g_object_set (G_OBJECT(buffer_handle->buffer), "temp-template", file_buffer_name, NULL);
-	g_object_set (G_OBJECT(buffer_handle->buffer), "file-buffer-max-size", file_buffer_size, NULL);
+	g_object_set (G_OBJECT(buffer_handle->buffer), "ring-buffer-max-size", file_buffer_size, NULL);
 
 	MMPLAYER_FLEAVE();
 	return;
@@ -448,16 +445,16 @@ streaming_set_buffer_size(mm_player_streaming_t* streamer, BufferType type, guin
 				buffering_time = GET_CURRENT_BUFFERING_TIME(buffer_handle);
 
 			g_object_set (G_OBJECT(buffer_handle->buffer),
-							"max-size-bytes", MAX_DECODEBIN_BUFFER_BYTES,	// fixed
+							"max-size-bytes", MAX_DECODEBIN_BUFFER_BYTES, /* mq size is fixed, control it with high/low percent value*/
 							"max-size-time", ((guint)ceil(buffering_time) * GST_SECOND),
-							"max-size-buffers", 0, NULL);  					// disable
+							"max-size-buffers", 0, NULL);  					  /* disable */
 
 			buffer_handle->buffering_time = buffering_time;
 			buffer_handle->buffering_bytes = MAX_DECODEBIN_BUFFER_BYTES;
 
-			debug_log("[New][MQ] max-size-time : %f", buffering_time);
+			debug_log("max-size-time : %f", buffering_time);
 		}
-		else	// queue2
+		else	/* queue2 */
 		{
 			if (buffer_handle->is_live)
 			{
@@ -479,7 +476,7 @@ streaming_set_buffer_size(mm_player_streaming_t* streamer, BufferType type, guin
 			buffer_handle->buffering_bytes = buffering_bytes;
 			buffer_handle->buffering_time = buffering_time;
 
-			debug_log("[New][Q2] max-size-bytes : %d", buffering_bytes);
+			debug_log("max-size-bytes : %d", buffering_bytes);
 		}
 	}
 
@@ -551,11 +548,8 @@ void __mm_player_streaming_sync_property(mm_player_streaming_t* streamer, GstEle
 	if ((streamer->need_sync) && (streamer->streaming_buffer_type == BUFFER_TYPE_DEMUXED))
 	{
 		g_object_set (G_OBJECT(decodebin),
-					"max-size-bytes", buffer_handle->buffering_bytes,
-					"max-size-time", (guint64)(ceil(buffer_handle->buffering_time) * GST_SECOND),
-					"low-percent", (gint)buffer_handle->buffer_low_percent,
-					"high-percent", (gint)buffer_handle->buffer_high_percent, NULL);
-
+				"low-percent", (gint)buffer_handle->buffer_low_percent,
+				"high-percent", (gint)buffer_handle->buffer_high_percent, NULL);
 	}
 
 	streamer->need_sync = FALSE;
@@ -564,7 +558,6 @@ void __mm_player_streaming_sync_property(mm_player_streaming_t* streamer, GstEle
 void __mm_player_streaming_set_multiqueue( 	mm_player_streaming_t* streamer,
 										GstElement* buffer,
 										gboolean use_buffering,
-										guint buffering_bytes,
 										gdouble buffering_time,
 										gdouble low_percent,
 										gdouble high_percent)
@@ -580,8 +573,6 @@ void __mm_player_streaming_set_multiqueue( 	mm_player_streaming_t* streamer,
 
 	if (buffer)
 	{
-		debug_log("USE-BUFFERING : %s", (use_buffering)?"OOO":"XXX");
-
 		buffer_handle->buffer = buffer;
 
 		if (use_buffering)
@@ -596,16 +587,16 @@ void __mm_player_streaming_set_multiqueue( 	mm_player_streaming_t* streamer,
 		g_object_set ( G_OBJECT (buffer_handle->buffer), "use-buffering", use_buffering, NULL );
 	}
 
-	debug_log ("time req: %2.2f, default: %2.2f\n", pre_buffering_time, buffering_time);
+	debug_log ("pre_buffering: %2.2f, during playing: %2.2f\n", pre_buffering_time, buffering_time);
 
 	if (pre_buffering_time <= 0.0)
 	{
-		pre_buffering_time = DEFAULT_PLAYING_TIME;
+		pre_buffering_time = GET_DEFAULT_PLAYING_TIME(streamer);
 		streamer->buffering_req.initial_second = (gint)ceil(buffering_time);
 	}
 
 	high_percent = (pre_buffering_time * 100) / MAX_DECODEBIN_BUFFER_TIME;
-	debug_log ("high_percent :  per %2.3f %%\n", high_percent);
+	debug_log ("high_percent %2.3f %%\n", high_percent);
 
 	streaming_set_buffer_size (streamer, BUFFER_TYPE_DEMUXED, MAX_DECODEBIN_BUFFER_BYTES, MAX_DECODEBIN_BUFFER_TIME);
 	streaming_set_buffer_percent (streamer, BUFFER_TYPE_DEMUXED, low_percent, 0, high_percent);
@@ -644,14 +635,18 @@ streaming_get_current_bitrate_info(	mm_player_streaming_t* streamer,
 		(streamer->buffer_handle[BUFFER_TYPE_MUXED].buffer != NULL) &&
 		(buffering_msg->src == (GstObject *)streamer->buffer_handle[BUFFER_TYPE_DEMUXED].buffer)))
 	{
-		query = gst_query_new_buffering (GST_FORMAT_PERCENT);
-
-		if (gst_element_query ((streamer->buffer_handle[BUFFER_TYPE_MUXED].buffer), query))
+		if ((query = gst_query_new_buffering (GST_FORMAT_PERCENT)))
 		{
-			gst_query_parse_buffering_stats (query, &mode, &in_rate, &out_rate, &buffering_left);
+			if (gst_element_query ((streamer->buffer_handle[BUFFER_TYPE_MUXED].buffer), query))
+			{
+				gst_query_parse_buffering_stats (query, &mode, &in_rate, &out_rate, &buffering_left);
+			}
+			gst_query_unref (query);
 		}
-
-		gst_query_unref (query);
+		else
+		{
+			debug_error ("fail to creating new query");
+		}
 	}
 	else
 	{
@@ -723,7 +718,7 @@ streaming_handle_fixed_buffering_mode(	mm_player_streaming_t* streamer,
 	buffer_handle = &(streamer->buffer_handle[streamer->streaming_buffer_type]);
 	buffering_time = fixed_buffering_time;
 
-	debug_log ("[IN] MM_PLAYER_BUFFERING_MODE_FIXED (%2.2f sec), out:%d\n", buffering_time, byte_out_rate);
+	debug_log ("buffering time: %2.2f sec, out rate: %d\n", buffering_time, byte_out_rate);
 
 	if ((buffering_time > 0) && (byte_out_rate > 0))
 	{
@@ -734,14 +729,18 @@ streaming_handle_fixed_buffering_mode(	mm_player_streaming_t* streamer,
 		if (buffering_time <= 0)
 			buffering_time = GET_CURRENT_BUFFERING_TIME(buffer_handle);
 
-		debug_warning ("content bitrate is not updated yet.\n");
-		buffering_bytes = GET_CURRENT_BUFFERING_BYTE(buffer_handle);
+		if (streamer->is_adaptive_streaming)
+			buffering_bytes = MAX_DECODEBIN_ADAPTIVE_BUFFER_BYTES;
+		else
+			buffering_bytes = GET_CURRENT_BUFFERING_BYTE(buffer_handle);
+
+		debug_warning ("use default %2.2f / %d\n", buffering_time, buffering_bytes);
 	}
 
 	GET_PERCENT(buffering_time, GET_CURRENT_BUFFERING_TIME(buffer_handle), buffer_handle->buffer_high_percent, per_time);
 	GET_PERCENT(buffering_bytes, GET_CURRENT_BUFFERING_BYTE(buffer_handle), buffer_handle->buffer_high_percent, per_byte);
 
-	debug_log ("[NEW] bytes %d, time %f, per_byte %f, per_time %f\n",
+	debug_log ("bytes %d, time %f, per_byte %f, per_time %f\n",
 										buffering_bytes, buffering_time, per_byte, per_time);
 
 	(*buffer_info).buffering_bytes = buffering_bytes;
@@ -770,22 +769,22 @@ streaming_handle_adaptive_buffering_mode(	mm_player_streaming_t* streamer,
 	return_if_fail(streamer);
 	return_if_fail(buffer_info);
 
-	debug_log ("[IN] MM_PLAYER_BUFFERING_MODE_SLINK (pos %lld, dur %lld, size %lld), in/out:%d/%d, buffer_criteria:%d, time_rate:%f, need:%d sec\n",
-										content_info.position, content_info.duration, content_info.content_size,
-										bitrate_info.byte_in_rate, bitrate_info.byte_out_rate,
-										bitrate_info.buffer_criteria, bitrate_info.time_rate, expected_play_time);
+	debug_log ("pos %lld, dur %lld, size %lld, in/out:%d/%d, buffer_criteria:%d, time_rate:%f, need:%d sec\n",
+							content_info.position, content_info.duration, content_info.content_size,
+							bitrate_info.byte_in_rate, bitrate_info.byte_out_rate,
+							bitrate_info.buffer_criteria, bitrate_info.time_rate, expected_play_time);
 
 	if (((expected_play_time == TO_THE_END) && (content_info.position <= 0)) ||
 		(content_info.duration <= 0) ||
 		(content_info.content_size <= 0))
 	{
-		debug_warning ("Impossible to update buffer setting!! keep previous setting!\n");
+		debug_warning ("keep previous setting.\n");
 		return;
 	}
 
 	if ((bitrate_info.byte_out_rate <= 0) || (bitrate_info.buffer_criteria == 0))
 	{
-		debug_warning ("Don't need to change buffer setting(or impossible)!! keep previous setting!\n");
+		debug_warning ("keep previous setting.\n");
 		return;
 	}
 
@@ -803,10 +802,11 @@ streaming_handle_adaptive_buffering_mode(	mm_player_streaming_t* streamer,
 	}
 	else
 	{
-		// buffering_bytes will be set as streamer->default_val.buffering_time
-		debug_warning ("*Warning : receiving rate(%d) > avg content bitrate(%d)!\n", bitrate_info.byte_in_rate, bitrate_info.byte_out_rate);
-		debug_warning ("*Warning : There is no reason to buffering.!\n");
-		debug_warning ("*Warning : in-rate or content bitrate has reported wrong value.!\n");
+		/* buffering_bytes will be set as streamer->default_val.buffering_time *
+		 * receiving rate is bigger than avg content bitrate
+		 * so there is no reason to buffering. if the buffering msg is posted
+		 * in-rate or contents bitrate has wrong value. */
+		debug_warning ("don't need to do buffering.\n");
 	}
 
 	if (buffering_bytes > 0)
@@ -825,15 +825,15 @@ streaming_handle_adaptive_buffering_mode(	mm_player_streaming_t* streamer,
 
 	if (buffer_buffering_time < default_buffering_time)
 	{
-		debug_log ("[NEW- adj] buffering time : %2.2f --> %2.2f\n", buffer_buffering_time, default_buffering_time);
-		debug_log ("[NEW- adj] buffering bytes : %d or %d or %d\n",
+		debug_log ("adjusted time: %2.2f -> %2.2f\n", buffer_buffering_time, default_buffering_time);
+		debug_log ("adjusted bytes : %d or %d or %d\n",
 			buffering_bytes,
 			(gint)(bitrate_info.byte_out_rate * buffer_buffering_time),
 			(gint)(bitrate_info.buffer_criteria * buffer_buffering_time));
 
 		if (content_info.position > 0)
 		{
-			// start monitoring the abmormal state
+			/* start monitoring the abmormal state */
 			streamer->default_val.buffering_monitor = TRUE;
 		}
 
@@ -845,8 +845,8 @@ streaming_handle_adaptive_buffering_mode(	mm_player_streaming_t* streamer,
 	GET_PERCENT(buffering_bytes, GET_CURRENT_BUFFERING_BYTE(buffer_handle), buffer_handle->buffer_high_percent, per_byte);
 	GET_PERCENT(buffer_buffering_time, GET_CURRENT_BUFFERING_TIME(buffer_handle), buffer_handle->buffer_high_percent, per_time);
 
-	debug_log ("[NEW- last][buffering_monitor == %s] bytes %d, time %f, per_byte %f, per_time %f\n",
-										(streamer->default_val.buffering_monitor)?"OO":"XX",
+	debug_log ("monitor %d, bytes %d, time %f, per_byte %f, per_time %f\n",
+										streamer->default_val.buffering_monitor,
 										buffering_bytes, buffer_buffering_time, per_byte, per_time);
 
 	(*buffer_info).buffering_bytes = buffering_bytes;
@@ -954,12 +954,12 @@ streaming_update_buffer_setting	(	mm_player_streaming_t* streamer,
 			buffer_handle->buffering_time = buffer_info.buffering_time;
 	}
 
-	debug_log ("new buffer size [%d -> %d bytes] / [%2.2f -> %2.2f sec] / %s \n",
+	debug_log ("adj buffer(%d) %d->%d bytes/%2.2f->%2.2f sec\n",
+					streamer->streaming_buffer_type,
 					GET_CURRENT_BUFFERING_BYTE(buffer_handle), buffer_info.buffering_bytes,
-					GET_CURRENT_BUFFERING_TIME(buffer_handle), buffer_info.buffering_time,
-					(IS_MUXED_BUFFERING_MODE(streamer))?"MUXED":((IS_DEMUXED_BUFFERING_MODE(streamer))?"DEMUXED":"----"));
+					GET_CURRENT_BUFFERING_TIME(buffer_handle), buffer_info.buffering_time);
 
-	// queue2 : bytes, multiqueue : time
+	/* queue2 : bytes, multiqueue : time */
 	if (((GET_CURRENT_BUFFERING_BYTE(buffer_handle) < buffer_info.buffering_bytes) && IS_MUXED_BUFFERING_MODE(streamer)) ||
 		((GET_CURRENT_BUFFERING_TIME(buffer_handle) < buffer_info.buffering_time) && IS_DEMUXED_BUFFERING_MODE(streamer)))
 	{
@@ -976,7 +976,7 @@ streaming_update_buffer_setting	(	mm_player_streaming_t* streamer,
 
 	streaming_set_buffer_percent(streamer, streamer->streaming_buffer_type, low_percent, buffer_info.percent_byte, buffer_info.percent_time);
 
-	debug_log("[FINAL] buffer setting : size %d, time %f, per %f\n",
+	debug_log("buffer setting: size %d, time %f, per %f\n",
 							GET_CURRENT_BUFFERING_BYTE(buffer_handle),
 							GET_CURRENT_BUFFERING_TIME(buffer_handle),
 							buffer_handle->buffer_high_percent);
@@ -987,7 +987,7 @@ streaming_update_buffer_setting	(	mm_player_streaming_t* streamer,
 static void
 streaming_adjust_min_threshold(mm_player_streaming_t* streamer, gint64 position)
 {
-#define DEFAULT_TIME_PAD 1	// sec
+#define DEFAULT_TIME_PAD 1	/* sec */
 	gint playing_time = 0;
 
 	MMPLAYER_FENTER();
@@ -996,9 +996,9 @@ streaming_adjust_min_threshold(mm_player_streaming_t* streamer, gint64 position)
 
 	playing_time = (gint)((position - streamer->default_val.prev_pos) / GST_SECOND);
 
-	debug_log ("[GRACE_NEW] buffering monitor = %s\n", (streamer->default_val.buffering_monitor)?"ON":"OFF");
-	debug_log ("[GRACE_NEW] playing_time ( %d sec) = %lld - %lld \n", playing_time, position, streamer->default_val.prev_pos);
-	debug_log ("[GRACE_NEW] default time : %2.3f, prev buffering t : %2.3f\n",
+	debug_log ("buffering monitor = %s\n", (streamer->default_val.buffering_monitor)?"ON":"OFF");
+	debug_log ("playing_time ( %d sec) = %lld - %lld \n", playing_time, position, streamer->default_val.prev_pos);
+	debug_log ("default time : %2.3f, prev buffering t : %2.3f\n",
 					streamer->default_val.buffering_time, streamer->buffer_handle[streamer->streaming_buffer_type].buffering_time);
 
 	if ((streamer->default_val.buffering_monitor) && (playing_time <= (gint)streamer->default_val.buffering_time))
@@ -1016,7 +1016,7 @@ streaming_adjust_min_threshold(mm_player_streaming_t* streamer, gint64 position)
 		streamer->default_val.buffering_time = DEFAULT_BUFFERING_TIME;
 	}
 
-	debug_log ("[GRACE_NEW] new default min value %2.3f \n", streamer->default_val.buffering_time);
+	debug_log ("new default min value %2.3f \n", streamer->default_val.buffering_time);
 
 	streamer->default_val.buffering_monitor = FALSE;
 	streamer->default_val.prev_pos = position;
@@ -1036,12 +1036,12 @@ streaming_update_buffering_status(mm_player_streaming_t* streamer, GstMessage *b
 	/* update when buffering has started. */
 	if ( !streamer->is_buffering )
 	{
-		debug_log ("buffering has started.\n");
 		streamer->is_buffering = TRUE;
 		streamer->is_buffering_done = FALSE;
 		streamer->buffering_percent = -1;
 
-		if (!streamer->buffering_req.is_pre_buffering)
+		if ((streamer->buffering_req.mode != MM_PLAYER_BUFFERING_MODE_FIXED) &&
+			(streamer->buffering_req.is_pre_buffering == FALSE))
 		{
 			streamer->need_update = TRUE;
 			streaming_adjust_min_threshold(streamer, position);
@@ -1053,7 +1053,8 @@ streaming_update_buffering_status(mm_player_streaming_t* streamer, GstMessage *b
 
 	if (streamer->buffering_percent < buffer_percent)
 	{
-		debug_log ("[%s] buffering %d%%....\n", GST_OBJECT_NAME(GST_MESSAGE_SRC(buffering_msg)), buffer_percent);
+		debug_log ("[%s] buffering %d%%....\n",
+			GST_OBJECT_NAME(GST_MESSAGE_SRC(buffering_msg)), buffer_percent);
 		streamer->buffering_percent = buffer_percent;
 	}
 	else
@@ -1063,7 +1064,6 @@ streaming_update_buffering_status(mm_player_streaming_t* streamer, GstMessage *b
 
 	if ((streamer->buffering_percent == MAX_BUFFER_PERCENT) || (streamer->is_buffering_done == TRUE))
 	{
-		debug_log ("buffering had done. finished!!\n");
 		streamer->is_buffering = FALSE;
 		streamer->buffering_req.is_pre_buffering = FALSE;
 		if (streamer->buffering_percent == MAX_BUFFER_PERCENT)
@@ -1073,13 +1073,13 @@ streaming_update_buffering_status(mm_player_streaming_t* streamer, GstMessage *b
 	}
 	else
 	{
-		// need to update periodically in case of slink mode
+		/* need to update periodically in case of slink mode */
 		if ((increased_per == TRUE) &&
 			(buffer_percent%10 == 0) &&
 			(streamer->buffering_req.mode == MM_PLAYER_BUFFERING_MODE_SLINK) &&
 			(streamer->buffering_req.is_pre_buffering == FALSE))
 		{
-			debug_log ("Update buffer setting to reflect data receiving rate (slink mode)\n");
+			/* Update buffer setting to reflect data receiving rate for slink mode */
 			streamer->need_update = TRUE;
 		}
 	}
@@ -1115,6 +1115,36 @@ void __mm_player_streaming_buffering( mm_player_streaming_t* streamer,
 	}
 
 	streaming_update_buffer_setting (streamer, buffering_msg, content_size, position, duration);
+
+	return;
+}
+
+void __mm_player_streaming_buffering_rtsp( mm_player_streaming_t* streamer,
+									  GstMessage *buffering_msg,
+									  gint64 position)
+{
+	MMPLAYER_FENTER();
+
+	return_if_fail ( streamer );
+	return_if_fail ( buffering_msg );
+	return_if_fail ( GST_IS_MESSAGE ( buffering_msg ) );
+	return_if_fail ( (GST_MESSAGE_TYPE ( buffering_msg ) == GST_MESSAGE_BUFFERING) );
+
+	if (buffering_msg)
+	{
+		streamer->buffering_req.is_pre_buffering = TRUE;
+
+		streaming_update_buffering_status(streamer, buffering_msg, position);
+
+		if (!streamer->need_update)
+		{
+			//debug_log ("don't need to update buffering stats during buffering.\n");
+			return;
+		}
+
+		streamer->need_update = FALSE;
+	}
+
 
 	return;
 }

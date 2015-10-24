@@ -1,0 +1,649 @@
+/*
+ * libmm-player
+ *
+ * Copyright (c) 2000 - 2011 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: JongHyuk Choi <jhchoi.choi@samsung.com>, heechul jeon <heechul.jeon@samsung.co>,
+ * YoungHwan An <younghwan_.an@samsung.com>, Eunhae Choi <eunhae1.choi@samsung.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+/*===========================================================================================
+|																							|
+|  INCLUDE FILES																			|
+|  																							|
+========================================================================================== */
+#include "mm_player_es.h"
+#include "mm_player_utils.h"
+#include "mm_player_internal.h"
+
+#include <gst/app/gstappsrc.h>
+
+/*---------------------------------------------------------------------------
+|    LOCAL VARIABLE DEFINITIONS for internal								|
+---------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------
+|    LOCAL FUNCTION PROTOTYPES:												|
+---------------------------------------------------------------------------*/
+static int _parse_media_format (MMPlayerVideoStreamInfo * video, MMPlayerAudioStreamInfo * audio, media_format_h format);
+static int _convert_media_format_video_mime_to_str (MMPlayerVideoStreamInfo * video, media_format_mimetype_e mime);
+static int _convert_media_format_audio_mime_to_str (MMPlayerAudioStreamInfo * audio, media_format_mimetype_e mime);
+
+/*===========================================================================================
+|																							|
+|  FUNCTION DEFINITIONS																		|
+|  																							|
+========================================================================================== */
+
+static int
+_convert_media_format_video_mime_to_str (MMPlayerVideoStreamInfo * video,
+    media_format_mimetype_e mime)
+{
+  return_val_if_fail (video, MM_ERROR_INVALID_ARGUMENT);
+
+  switch (mime) {
+    case MEDIA_FORMAT_MPEG4_SP:
+      video->mime = g_strdup ("video/mpeg");
+      video->version = 4;
+      break;
+    case MEDIA_FORMAT_H264_SP:
+	case MEDIA_FORMAT_H264_MP:
+	case MEDIA_FORMAT_H264_HP:
+      video->mime = g_strdup ("video/x-h264");
+      break;
+    default:
+      video->mime = g_strdup ("unknown");
+      break;
+  }
+
+  return MM_ERROR_NONE;
+}
+
+static int
+_convert_media_format_audio_mime_to_str (MMPlayerAudioStreamInfo * audio,
+    media_format_mimetype_e mime)
+{
+  return_val_if_fail (audio, MM_ERROR_INVALID_ARGUMENT);
+
+  switch (mime) {
+    case MEDIA_FORMAT_AAC:
+      audio->mime = g_strdup ("audio/mpeg");
+      audio->version = 2;
+      break;
+    default:
+      audio->mime = g_strdup ("unknown");
+      break;
+  }
+
+  return MM_ERROR_NONE;
+}
+
+static int
+_parse_media_format (MMPlayerVideoStreamInfo * video,
+    MMPlayerAudioStreamInfo * audio, media_format_h format)
+{
+  if (audio) {
+    media_format_mimetype_e mime;
+    int channel;
+    int samplerate;
+    int avg_bps;
+
+    if (media_format_get_audio_info (format, &mime, &channel, &samplerate, NULL,
+            &avg_bps) != MEDIA_FORMAT_ERROR_NONE) {
+      debug_error ("media_format_get_audio_info failed");
+	  return MM_ERROR_PLAYER_INTERNAL;
+    }
+
+    _convert_media_format_audio_mime_to_str (audio, mime);
+    audio->sample_rate = samplerate;
+    audio->channels = channel;
+  }
+
+  if (video) {
+    media_format_mimetype_e mime;
+    int width;
+    int height;
+    int avg_bps;
+
+    if (media_format_get_video_info (format, &mime, &width, &height, &avg_bps,
+            NULL) != MEDIA_FORMAT_ERROR_NONE) {
+      debug_error ("media_format_get_video_info failed");
+	  return MM_ERROR_PLAYER_INTERNAL;
+    }
+
+    _convert_media_format_video_mime_to_str (video, mime);
+    video->width = width;
+    video->height = height;
+  }
+
+  return MM_ERROR_NONE;
+}
+
+static gboolean
+_mmplayer_update_video_info(MMHandleType hplayer, media_format_h fmt)
+{
+  mm_player_t *player = (mm_player_t *) hplayer;
+  gboolean ret = FALSE;
+  GstStructure *str = NULL;
+  media_format_mimetype_e mimetype = 0;
+  gint cur_width = 0, width = 0;
+  gint cur_height = 0, height = 0;
+
+  MMPLAYER_FENTER ();
+
+  return_val_if_fail (player, FALSE);
+  return_val_if_fail (fmt, FALSE);
+
+  if (player->v_stream_caps)
+  {
+    str = gst_caps_get_structure (player->v_stream_caps, 0);
+    if ( !gst_structure_get_int (str, "width", &cur_width))
+    {
+      debug_log ("missing 'width' field in video caps");
+    }
+
+    if ( !gst_structure_get_int (str, "height", &cur_height))
+    {
+      debug_log ("missing 'height' field in video caps");
+    }
+
+    media_format_get_video_info(fmt, &mimetype, &width, &height, NULL, NULL);
+    if ((cur_width != width) || (cur_height != height))
+    {
+      debug_warning ("resolution is changed %dx%d -> %dx%d",
+                          cur_width, cur_height, width, height);
+      _mmplayer_set_media_stream_video_info(hplayer, fmt);
+      ret = TRUE;
+    }
+  }
+
+  MMPLAYER_FLEAVE ();
+  return ret;
+}
+
+
+int
+_mmplayer_set_media_stream_buffer_status_cb(MMHandleType hplayer,
+                                            MMPlayerStreamType type,
+                                            mm_player_media_stream_buffer_status_callback callback,
+                                            void *user_param)
+{
+	mm_player_t *player = (mm_player_t *) hplayer;
+
+	MMPLAYER_FENTER ();
+
+	return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	if ((type < MM_PLAYER_STREAM_TYPE_DEFAULT) || (type > MM_PLAYER_STREAM_TYPE_TEXT))
+		return MM_ERROR_INVALID_ARGUMENT;
+
+	if (player->media_stream_buffer_status_cb[type])
+	{
+		if (!callback)
+		{
+			debug_log ("[type:%d] will be clear.\n", type);
+		}
+		else
+		{
+			debug_log ("[type:%d] will be overwritten.\n", type);
+		}
+	}
+
+	player->media_stream_buffer_status_cb[type] = callback;
+	player->buffer_cb_user_param = user_param;
+
+	debug_log ("player handle %p, type %d, callback %p\n", player, type,
+		player->media_stream_buffer_status_cb[type]);
+
+	MMPLAYER_FLEAVE ();
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_set_media_stream_seek_data_cb(MMHandleType hplayer,
+                                        MMPlayerStreamType type,
+                                        mm_player_media_stream_seek_data_callback callback,
+                                        void *user_param)
+{
+	mm_player_t *player = (mm_player_t *) hplayer;
+
+	MMPLAYER_FENTER ();
+
+	return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	if ((type < MM_PLAYER_STREAM_TYPE_DEFAULT) || (type > MM_PLAYER_STREAM_TYPE_TEXT))
+		return MM_ERROR_INVALID_ARGUMENT;
+
+	if (player->media_stream_seek_data_cb[type])
+	{
+		if (!callback)
+		{
+			debug_log ("[type:%d] will be clear.\n", type);
+		}
+		else
+		{
+			debug_log ("[type:%d] will be overwritten.\n", type);
+		}
+	}
+
+	player->media_stream_seek_data_cb[type] = callback;
+	player->buffer_cb_user_param = user_param;
+
+	debug_log ("player handle %p, type %d, callback %p\n", player, type,
+		player->media_stream_seek_data_cb[type]);
+
+	MMPLAYER_FLEAVE ();
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_set_media_stream_max_size(MMHandleType hplayer, MMPlayerStreamType type, guint64 max_size)
+{
+	mm_player_t *player = (mm_player_t *) hplayer;
+
+	MMPLAYER_FENTER ();
+
+	return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	if ((type < MM_PLAYER_STREAM_TYPE_DEFAULT) || (type > MM_PLAYER_STREAM_TYPE_TEXT))
+		return MM_ERROR_INVALID_ARGUMENT;
+
+	player->media_stream_buffer_max_size[type] = max_size;
+
+	debug_log ("type %d, max_size %llu\n",
+					type, player->media_stream_buffer_max_size[type]);
+
+	MMPLAYER_FLEAVE ();
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_get_media_stream_max_size(MMHandleType hplayer, MMPlayerStreamType type, guint64 *max_size)
+{
+	mm_player_t *player = (mm_player_t *) hplayer;
+
+	MMPLAYER_FENTER ();
+
+	return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail (max_size, MM_ERROR_INVALID_ARGUMENT);
+
+	if ((type < MM_PLAYER_STREAM_TYPE_DEFAULT) || (type > MM_PLAYER_STREAM_TYPE_TEXT))
+		return MM_ERROR_INVALID_ARGUMENT;
+
+	*max_size = player->media_stream_buffer_max_size[type];
+
+	MMPLAYER_FLEAVE ();
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_set_media_stream_min_percent(MMHandleType hplayer, MMPlayerStreamType type, guint min_percent)
+{
+	mm_player_t *player = (mm_player_t *) hplayer;
+
+	MMPLAYER_FENTER ();
+
+	return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	if ((type < MM_PLAYER_STREAM_TYPE_DEFAULT) || (type > MM_PLAYER_STREAM_TYPE_TEXT))
+		return MM_ERROR_INVALID_ARGUMENT;
+
+	player->media_stream_buffer_min_percent[type] = min_percent;
+
+	debug_log ("type %d, min_per %u\n",
+					type, player->media_stream_buffer_min_percent[type]);
+
+	MMPLAYER_FLEAVE ();
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_get_media_stream_min_percent(MMHandleType hplayer, MMPlayerStreamType type, guint *min_percent)
+{
+	mm_player_t *player = (mm_player_t *) hplayer;
+
+	MMPLAYER_FENTER ();
+
+	return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+	return_val_if_fail (min_percent, MM_ERROR_INVALID_ARGUMENT);
+
+	if ((type < MM_PLAYER_STREAM_TYPE_DEFAULT) || (type > MM_PLAYER_STREAM_TYPE_TEXT))
+		return MM_ERROR_INVALID_ARGUMENT;
+
+	*min_percent = player->media_stream_buffer_min_percent[type];
+
+	MMPLAYER_FLEAVE ();
+
+	return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_submit_media_stream_packet (MMHandleType hplayer, media_packet_h packet)
+{
+  int ret = MM_ERROR_NONE;
+  GstBuffer *_buffer = NULL;
+  mm_player_t *player = (mm_player_t *) hplayer;
+  guint8 *buf = NULL;
+  uint64_t size = 0;
+  enum MainElementID elemId = MMPLAYER_M_NUM;
+  MMPlayerTrackType streamtype = MM_PLAYER_TRACK_TYPE_AUDIO;
+  media_format_h fmt = NULL;
+  bool flag = FALSE;
+  bool is_eos = FALSE;
+
+  return_val_if_fail (packet, MM_ERROR_INVALID_ARGUMENT);
+  return_val_if_fail ( player &&
+    player->pipeline &&
+    player->pipeline->mainbin &&
+    player->pipeline->mainbin[MMPLAYER_M_SRC].gst,
+    MM_ERROR_PLAYER_INTERNAL );
+
+  /* get stream type if audio or video */
+  media_packet_is_audio (packet, &flag);
+  if (flag) {
+    streamtype = MM_PLAYER_TRACK_TYPE_AUDIO;
+    if (player->pipeline->mainbin[MMPLAYER_M_2ND_SRC].gst) {
+      elemId = MMPLAYER_M_2ND_SRC;
+    } else if (g_strrstr (GST_ELEMENT_NAME (player->pipeline->mainbin[MMPLAYER_M_SRC].gst), "audio_appsrc")) {
+      elemId = MMPLAYER_M_SRC;
+    } else {
+      debug_error ("there is no audio appsrc");
+      ret = MM_ERROR_PLAYER_INTERNAL;
+      goto ERROR;
+    }
+  } else {
+    media_packet_is_video (packet, &flag);
+    if (flag) {
+      streamtype = MM_PLAYER_TRACK_TYPE_VIDEO;
+      elemId = MMPLAYER_M_SRC;
+    } else {
+      streamtype = MM_PLAYER_TRACK_TYPE_TEXT;
+      elemId = MMPLAYER_M_SUBSRC;
+    }
+  }
+
+  /* get data */
+  if (media_packet_get_buffer_data_ptr (packet, (void **) &buf) != MEDIA_PACKET_ERROR_NONE) {
+    debug_error("failed to get buffer data ptr");
+    ret = MM_ERROR_PLAYER_INTERNAL;
+    goto ERROR;
+  }
+
+  if (media_packet_get_buffer_size (packet, &size) != MEDIA_PACKET_ERROR_NONE) {
+    debug_error("failed to get buffer size");
+    ret = MM_ERROR_PLAYER_INTERNAL;
+    goto ERROR;
+  }
+
+  if (buf != NULL && size > 0) {
+    GstMapInfo buff_info = GST_MAP_INFO_INIT;
+    uint64_t pts = 0;
+
+    /* get size */
+    _buffer = gst_buffer_new_and_alloc (size);
+
+    if (!_buffer) {
+        debug_error("failed to allocate memory for push buffer\n");
+        ret = MM_ERROR_PLAYER_NO_FREE_SPACE;
+        goto ERROR;
+    }
+
+    if (gst_buffer_map (_buffer, &buff_info, GST_MAP_READWRITE)) {
+
+      memcpy (buff_info.data, buf, size);
+      buff_info.size = size;
+
+      gst_buffer_unmap (_buffer, &buff_info);
+    }
+
+    if (streamtype == MM_PLAYER_TRACK_TYPE_VIDEO) {
+      /* get format to check video format */
+      media_packet_get_format (packet, &fmt);
+      if (fmt) {
+        if (_mmplayer_update_video_info(hplayer, fmt)) {
+          debug_log("update video caps");
+          g_object_set(G_OBJECT(player->pipeline->mainbin[MMPLAYER_M_SRC].gst),
+                                    "caps", player->v_stream_caps, NULL);
+        }
+      }
+    }
+
+    /* get pts */
+    if (media_packet_get_pts (packet, &pts) != MEDIA_PACKET_ERROR_NONE) {
+      debug_error("failed to get pts info");
+      ret = MM_ERROR_PLAYER_INTERNAL;
+      goto ERROR;
+    }
+    GST_BUFFER_PTS (_buffer) = (GstClockTime) (pts * 1000000);
+
+    if ((elemId < MMPLAYER_M_NUM) && (player->pipeline->mainbin[elemId].gst)) {
+      gst_app_src_push_buffer (GST_APP_SRC (player->pipeline->mainbin[elemId].gst), _buffer);
+    } else {
+      debug_error ("elem(%d) does not exist.", elemId);
+      ret = MM_ERROR_PLAYER_INTERNAL;
+      goto ERROR;
+    }
+  }
+
+  /* check eos */
+  if (media_packet_is_end_of_stream(packet, &is_eos) != MEDIA_PACKET_ERROR_NONE) {
+    debug_error("failed to get eos info");
+    ret = MM_ERROR_PLAYER_INTERNAL;
+    goto ERROR;
+  }
+
+  if (is_eos) {
+    debug_warning ("we got eos of stream type(%d)", streamtype);
+    if ((elemId < MMPLAYER_M_NUM) && (player->pipeline->mainbin[elemId].gst)) {
+      g_signal_emit_by_name (player->pipeline->
+          mainbin[elemId].gst, "end-of-stream", &ret);
+    } else {
+      debug_error ("elem(%d) does not exist.", elemId);
+      ret = MM_ERROR_PLAYER_INTERNAL;
+    }
+  }
+
+ERROR:
+  return ret;
+}
+
+static int
+_mmplayer_video_caps_new (MMHandleType hplayer, MMPlayerVideoStreamInfo * video,
+    const char *fieldname, ...)
+{
+  int cap_size;
+  GstCaps *caps = NULL;
+  GstStructure *structure = NULL;
+  va_list var_args;
+  mm_player_t *player = MM_PLAYER_CAST (hplayer);
+
+  MMPLAYER_FENTER ();
+  return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+  return_val_if_fail (video, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+  debug_log ("width=%d height=%d framerate num=%d, den=%d",
+    video->width, video->height, video->framerate_num, video->framerate_den);
+
+  caps = gst_caps_new_simple (video->mime,
+      "width", G_TYPE_INT, video->width,
+      "height", G_TYPE_INT, video->height,
+      "framerate", GST_TYPE_FRACTION, video->framerate_num, video->framerate_den, NULL);
+
+  for (cap_size = 0; cap_size < gst_caps_get_size (caps); cap_size++) {
+    va_start (var_args, fieldname);
+    structure = gst_caps_get_structure (caps, cap_size);
+    gst_structure_set_valist (structure, fieldname, var_args);
+    va_end (var_args);
+  }
+
+  if (video->extradata_size) {
+    GstBuffer *buf = NULL;
+    GstMapInfo buff_info = GST_MAP_INFO_INIT;
+
+    buf = gst_buffer_new_and_alloc (video->extradata_size);
+
+    if (gst_buffer_map (buf, &buff_info, GST_MAP_READ)) {
+      memcpy (buff_info.data, video->codec_extradata, video->extradata_size);
+      buff_info.size = video->extradata_size;
+      gst_buffer_unmap (buf, &buff_info);
+    }
+
+    gst_caps_set_simple (caps, "codec_data", GST_TYPE_BUFFER, buf, NULL);
+    gst_buffer_unref (buf);
+  }
+
+  if (player->v_stream_caps)
+  {
+    debug_warning ("caps will be updated ");
+
+    gst_caps_unref(player->v_stream_caps);
+    player->v_stream_caps = NULL;
+  }
+
+  player->v_stream_caps = gst_caps_copy (caps);
+  MMPLAYER_LOG_GST_CAPS_TYPE (player->v_stream_caps);
+  gst_caps_unref (caps);
+
+  MMPLAYER_FLEAVE ();
+
+  return MM_ERROR_NONE;
+}
+
+static void
+_mmplayer_set_media_stream_uri_type(mm_player_t *player)
+{
+	MMPLAYER_FENTER ();
+
+	player->profile.uri_type = MM_PLAYER_URI_TYPE_MS_BUFF;
+	player->es_player_push_mode = TRUE;
+
+	MMPLAYER_FLEAVE ();
+	return;
+}
+
+int
+_mmplayer_set_media_stream_video_info (MMHandleType hplayer, media_format_h format)
+{
+  mm_player_t *player = MM_PLAYER_CAST (hplayer);
+  MMPlayerVideoStreamInfo video = { 0, };
+  int ret = MM_ERROR_NONE;
+
+  MMPLAYER_FENTER ();
+
+  return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+  _mmplayer_set_media_stream_uri_type(player);
+
+  ret = _parse_media_format (&video, NULL, format);
+  if(ret != MM_ERROR_NONE)
+    return ret;
+
+  if (strstr (video.mime, "video/mpeg")) {
+    _mmplayer_video_caps_new (hplayer, &video,
+        "mpegversion", G_TYPE_INT, video.version,
+        "systemstream", G_TYPE_BOOLEAN, FALSE, NULL);
+  } else if (strstr (video.mime, "video/x-h264")) {
+      _mmplayer_video_caps_new (hplayer, &video,
+          "stream-format", G_TYPE_STRING, "byte-stream",
+          "alignment", G_TYPE_STRING, "au", NULL);
+  }
+  g_free ((char *) video.mime);
+
+  MMPLAYER_FLEAVE ();
+
+  return MM_ERROR_NONE;
+}
+
+int
+_mmplayer_set_media_stream_audio_info (MMHandleType hplayer, media_format_h format)
+{
+  mm_player_t *player = MM_PLAYER_CAST (hplayer);
+  GstCaps *caps = NULL;
+  MMPlayerAudioStreamInfo audio = { 0, };
+  int ret = MM_ERROR_NONE;
+
+  MMPLAYER_FENTER ();
+
+  return_val_if_fail (hplayer, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+  _mmplayer_set_media_stream_uri_type(player);
+
+  ret = _parse_media_format (NULL, &audio, format);
+  if(ret != MM_ERROR_NONE)
+    return ret;
+
+  audio.user_info = 0;           //test
+
+  debug_log ("set audio player[%p] info [%p] version=%d rate=%d channel=%d",
+      player, audio, audio.version, audio.sample_rate, audio.channels);
+
+  if (strstr (audio.mime, "audio/mpeg")) {
+    if (audio.version == 1) {  	// mp3
+      caps = gst_caps_new_simple ("audio/mpeg",
+          "channels", G_TYPE_INT, audio.channels,
+          "rate", G_TYPE_INT, audio.sample_rate,
+          "mpegversion", G_TYPE_INT, audio.version,
+          "layer", G_TYPE_INT, audio.user_info, NULL);
+    } else {                    // aac
+      gchar *format = NULL;
+
+      if (audio.user_info == 0)
+        format = g_strdup ("raw");
+      else if (audio.user_info == 1)
+        format = g_strdup ("adts");
+      else if (audio.user_info == 2)
+        format = g_strdup ("adif");
+
+      caps = gst_caps_new_simple ("audio/mpeg",
+          "channels", G_TYPE_INT, audio.channels,
+          "rate", G_TYPE_INT, audio.sample_rate,
+          "mpegversion", G_TYPE_INT, audio.version,
+          "stream-format", G_TYPE_STRING, format, NULL);
+
+      g_free (format);
+      format = NULL;
+    }
+  }
+
+  if (audio.extradata_size) {
+    GstBuffer *buf = NULL;
+    GstMapInfo buff_info = GST_MAP_INFO_INIT;
+
+    buf = gst_buffer_new_and_alloc (audio.extradata_size);
+
+    if (gst_buffer_map (buf, &buff_info, GST_MAP_READ)) {
+      memcpy (buff_info.data, audio.codec_extradata, audio.extradata_size);
+      gst_buffer_unmap (buf, &buff_info);
+    }
+
+    gst_caps_set_simple (caps, "codec_data", GST_TYPE_BUFFER, buf, NULL);
+    gst_buffer_unref (buf);
+  }
+
+  g_free ((char *) audio.mime);
+
+  player->a_stream_caps = gst_caps_copy (caps);
+  gst_caps_unref (caps);
+
+  MMPLAYER_FLEAVE ();
+
+  return MM_ERROR_NONE;
+}

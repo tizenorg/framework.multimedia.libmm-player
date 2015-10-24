@@ -182,36 +182,10 @@ gint _mmplayer_asm_set_state(MMHandleType hplayer, ASM_sound_states_t state, gbo
 {
 	gint event_type = ASM_EVENT_NONE;
 	gint pid = -1;
-	int vconf_safety_vol_val = 0;
 	ASM_resource_t resource = ASM_RESOURCE_NONE;
 	mm_player_t *player = (mm_player_t *)hplayer;
 	MMPlayerASM* sm	 = &player->sm;
 	MMPLAYER_FENTER();
-
-	if (player->set_mode.safety_volume)
-	{
-		/* get safety volume */
-		if (vconf_get_int(VCONFKEY_SOUND_ENABLE_SAFETY_VOL, &vconf_safety_vol_val))
-		{
-			debug_error ("failed to get safety volume");
-		}
-
-		if (enable_safety_vol)
-		{
-			vconf_safety_vol_val = vconf_safety_vol_val | VCONFKEY_SOUND_SAFETY_VOL_FW_MMPLAYER;
-		}
-		else
-		{
-			vconf_safety_vol_val = vconf_safety_vol_val & ~VCONFKEY_SOUND_SAFETY_VOL_FW_MMPLAYER;
-		}
-
-		/* set safety volume */
-		if (vconf_set_int(VCONFKEY_SOUND_ENABLE_SAFETY_VOL, vconf_safety_vol_val))
-		{
-			debug_error ("failed to set safety volume");
-		}
-		debug_log("safety vol : %d(0:false, 1:true), current result of vconf val : 0x%x", enable_safety_vol, vconf_safety_vol_val);
-	}
 
 	MMPLAYER_CHECK_SESSION_INSTANCE(sm);
 	MMPLAYER_CHECK_SESSION_SKIP(sm);
@@ -317,7 +291,6 @@ __mmplayer_asm_get_event_type(gint type)
 			break;
 
 		case MM_SESSION_TYPE_MEDIA:
-//		case MM_SESSION_TYPE_MEDIA_RECORD:
 			event_type = ASM_EVENT_MEDIA_MMPLAYER;
 			break;
 
@@ -333,11 +306,6 @@ __mmplayer_asm_get_event_type(gint type)
 			event_type = ASM_EVENT_EMERGENCY;
 			break;
 
-		case MM_SESSION_TYPE_RECORD_VIDEO:
-		case MM_SESSION_TYPE_RECORD_AUDIO:
-			event_type = ASM_EVENT_MEDIA_MMPLAYER;
-			break;
-
 		default:
 			debug_msg("unexpected case!\n");
 			event_type = ASM_EVENT_MEDIA_MMPLAYER;
@@ -345,4 +313,40 @@ __mmplayer_asm_get_event_type(gint type)
 	}
 
 	return event_type;
+}
+
+gint
+_mmplayer_asm_ignore_session(MMHandleType hplayer)
+{
+	mm_player_t *player = (mm_player_t *)hplayer;
+
+	MMPLAYER_FENTER();
+
+	return_val_if_fail (player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	/* check state */
+	if (player->state != MM_PLAYER_STATE_NULL)
+	{
+		debug_log("invalid state to make session mix");
+		return MM_ERROR_PLAYER_INVALID_STATE;
+	}
+
+	if (player->sm.skip_session == FALSE && player->sm.handle)
+	{
+		int error_code = 0;
+
+		if (!ASM_unregister_sound(player->sm.handle, player->sm.event, &error_code))
+		{
+			debug_error("Unregister sound failed 0x%X", error_code);
+			return MM_ERROR_POLICY_INTERNAL;
+		}
+		player->sm.skip_session = TRUE;
+		player->sm.handle = 0;
+
+		debug_log("session skip enabled");
+	}
+
+	MMPLAYER_FLEAVE();
+
+	return MM_ERROR_NONE;
 }

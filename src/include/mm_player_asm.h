@@ -53,6 +53,8 @@ typedef struct {
 gint _mmplayer_asm_register(MMPlayerASM* sm, ASM_sound_cb_t callback, void* param);
 gint _mmplayer_asm_unregister(MMPlayerASM* sm);
 gint _mmplayer_asm_set_state(MMHandleType player, ASM_sound_states_t state, gboolean enable_safety_vol);
+gint _mmplayer_asm_ignore_session(MMHandleType player);
+gint _mmplayer_asm_set_sound_resource(MMHandleType player, MMPlayerSoundResource mode);
 ASM_cb_result_t __mmplayer_asm_callback(int handle, ASM_event_sources_t event_src, ASM_sound_commands_t command, unsigned int sound_status, void* cb_data);
 
 #ifdef __cplusplus

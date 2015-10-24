@@ -28,7 +28,7 @@
 #include <vconf.h>
 #include <mm_attrs_private.h>
 #include <mm_attrs.h>
-#include <gst/interfaces/xoverlay.h>
+#include <gst/video/videooverlay.h>
 #include "mm_player_utils.h"
 #include "mm_player_priv.h"
 #include "mm_player_attrs.h"
@@ -217,7 +217,6 @@ _mmplayer_construct_attribute(MMHandleType handle)
 	MMHandleType attrs = 0;
 	int num_of_attrs = 0;
 	mmf_attrs_construct_info_t *base = NULL;
-	//gchar *system_ua = NULL;
 
 	return_val_if_fail (handle, 0);
 
@@ -727,15 +726,6 @@ _mmplayer_construct_attribute(MMHandleType handle)
 			0
 		},
 		{
-			"display_zoom",
-			MM_ATTRS_TYPE_DOUBLE,
-			MM_ATTRS_FLAG_RW,
-			(void *) 1,
-			MM_ATTRS_VALID_TYPE_DOUBLE_RANGE,
-			1.0,
-			9.0
-		},
-		{
 			"display_surface_type",
 			MM_ATTRS_TYPE_INT,
 			MM_ATTRS_FLAG_RW,
@@ -817,6 +807,24 @@ _mmplayer_construct_attribute(MMHandleType handle)
 			MMPLAYER_MAX_INT
 		},
 		{
+			"sound_stream_type",
+			MM_ATTRS_TYPE_STRING,
+			MM_ATTRS_FLAG_RW,
+			(void *) NULL,
+			MM_ATTRS_VALID_TYPE_NONE,
+			0,
+			0
+		},
+		{
+			"sound_stream_index",
+			MM_ATTRS_TYPE_INT,
+			MM_ATTRS_FLAG_RW,
+			0,
+			MM_ATTRS_VALID_TYPE_INT_RANGE,
+			0,
+			MMPLAYER_MAX_INT
+		},
+		{
 			"sound_route",
 			MM_ATTRS_TYPE_INT,
 			MM_ATTRS_FLAG_RW,
@@ -860,6 +868,15 @@ _mmplayer_construct_attribute(MMHandleType handle)
 			MM_ATTRS_VALID_TYPE_INT_RANGE,
 			0,
 			3
+		},
+		{
+			"sound_close_resource",
+			MM_ATTRS_TYPE_INT,
+			MM_ATTRS_FLAG_RW,
+			(void *) 0,
+			MM_ATTRS_VALID_TYPE_INT_RANGE,
+			0,
+			1
 		},
 		{
 			"sound_latency_mode",
@@ -986,6 +1003,24 @@ _mmplayer_construct_attribute(MMHandleType handle)
 			MM_ATTRS_VALID_TYPE_INT_RANGE,
 			0,
 			1
+		},
+		{
+			"content_video_orientation",	// orientation of video content
+			MM_ATTRS_TYPE_STRING,
+			MM_ATTRS_FLAG_RW,
+			(void *) NULL,
+			MM_ATTRS_VALID_TYPE_NONE,
+			0,
+			0
+		},
+		{
+			"pcm_audioformat",
+			MM_ATTRS_TYPE_STRING,
+			MM_ATTRS_FLAG_RW,
+			(void *) "F32LE",
+			MM_ATTRS_VALID_TYPE_NONE,
+			0,
+			0
 		}
 	};
 

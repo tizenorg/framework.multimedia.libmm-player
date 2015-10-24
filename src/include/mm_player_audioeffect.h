@@ -193,6 +193,19 @@ int mm_player_audio_effect_custom_apply(MMHandleType hplayer);
 int mm_player_audio_effect_custom_clear_eq_all(MMHandleType hplayer);
 
 /**
+ * This function is to clear Extension custom effects.
+ *
+ * @param	hplayer		[in]	Handle of player.
+ *
+ * @return	This function returns zero on success, or negative value with error code.
+ *
+ * @remark
+ * @see
+ * @since
+ */
+int mm_player_audio_effect_custom_clear_ext_all(MMHandleType hplayer);
+
+/**
  * This function is to get the number of equalizer bands.
  *
  * @param	hplayer		[in]	Handle of player.
@@ -298,6 +311,20 @@ int mm_player_audio_effect_custom_set_level(MMHandleType hplayer, MMAudioEffectC
  * @since
  */
 int mm_player_audio_effect_custom_set_level_eq_from_list(MMHandleType hplayer, int *level_list, int size);
+
+/**
+ * This function is to decide if the preset type effect is supported or not
+ *
+ * @param	hplayer		[in]	Handle of player.
+ * @param	effect		[in]	Preset type effect.
+ *
+ * @return	This function returns zero on success, or negative value with error code.
+ *
+ * @remark
+ * @see
+ * @since
+ */
+int mm_player_is_supported_preset_effect_type(MMHandleType hplayer, MMAudioEffectPresetType effect);
 
 /**
  * This function is to decide if the custom type effect is supported or not

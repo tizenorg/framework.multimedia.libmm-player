@@ -215,8 +215,17 @@ __mmplayer_is_earphone_only_effect_type(mm_player_t *player, MMAudioEffectType e
 
 	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
 
+	/* preset */
+	if (effect_type == MM_AUDIO_EFFECT_TYPE_PRESET)
+	{
+		if (player->ini.audio_effect_preset_earphone_only_list[effect])
+		{
+			debug_msg("this preset effect(%d) is only available with earphone", effect);
+			result = TRUE;
+		}
+	}
 	/* custom */
-	if (effect_type == MM_AUDIO_EFFECT_TYPE_CUSTOM)
+	else if (effect_type == MM_AUDIO_EFFECT_TYPE_CUSTOM)
 	{
 		for (i = 1; i < MM_AUDIO_EFFECT_CUSTOM_NUM; i++) /* it starts from 1(except testing for EQ) */
 		{
@@ -245,7 +254,7 @@ int
 __mmplayer_audio_set_output_type (mm_player_t *player, MMAudioEffectType effect_type, int effect)
 {
 	GstElement *audio_effect_element = NULL;
-	mm_sound_device_flags_e flags = MM_SOUND_DEVICE_STATE_ACTIVATED_FLAG;
+	mm_sound_device_flags_e flags = MM_SOUND_DEVICE_ALL_FLAG;
 	MMSoundDeviceList_t device_list;
 	MMSoundDevice_t device_h = NULL;
 	mm_sound_device_type_e device_type;
@@ -332,7 +341,7 @@ gboolean
 _mmplayer_is_supported_effect_type(mm_player_t* player, MMAudioEffectType effect_type, int effect)
 {
 	gboolean result = TRUE;
-	mm_sound_device_flags_e flags = MM_SOUND_DEVICE_STATE_ACTIVATED_FLAG;
+	mm_sound_device_flags_e flags = MM_SOUND_DEVICE_ALL_FLAG;
 	MMSoundDeviceList_t device_list;
 	MMSoundDevice_t device_h = NULL;
 	mm_sound_device_type_e device_type;
@@ -412,6 +421,7 @@ _mmplayer_is_supported_effect_type(mm_player_t* player, MMAudioEffectType effect
 				if (device_type == MM_SOUND_DEVICE_TYPE_BUILTIN_SPEAKER &&
 						player->ini.audio_effect_custom_earphone_only_list[effect])
 				{
+					result = FALSE;
 				}
 			}
 		}
@@ -553,6 +563,53 @@ mm_player_audio_effect_custom_clear_eq_all(MMHandleType hplayer)
 	return result;
 }
 
+
+int
+mm_player_audio_effect_custom_clear_ext_all(MMHandleType hplayer)
+{
+	int i;
+	int result = MM_ERROR_NONE;
+	mm_player_t* player = (mm_player_t*)hplayer;
+
+	MMPLAYER_FENTER();
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	/* clear ALL custom effects, except EQ */
+	for ( i = 0 ; i < MM_AUDIO_EFFECT_CUSTOM_NUM - 1 ; i++ )
+	{
+		player->audio_effect_info.custom_ext_level[i] = MM_AUDIO_EFFECT_CUSTOM_LEVEL_INIT;
+	}
+
+	debug_msg("All the extension effects clearing success");
+
+	MMPLAYER_FLEAVE();
+
+	return result;
+}
+
+
+int
+mm_player_is_supported_preset_effect_type(MMHandleType hplayer, MMAudioEffectPresetType effect)
+{
+	mm_player_t* player = (mm_player_t*)hplayer;
+	int result = MM_ERROR_NONE;
+
+	MMPLAYER_FENTER();
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	if ( !_mmplayer_is_supported_effect_type( player, MM_AUDIO_EFFECT_TYPE_PRESET, effect ) )
+	{
+		result = MM_ERROR_PLAYER_SOUND_EFFECT_NOT_SUPPORTED_FILTER;
+	}
+
+	MMPLAYER_FLEAVE();
+
+	return result;
+}
+
+
 int
 mm_player_is_supported_custom_effect_type(MMHandleType hplayer, MMAudioEffectCustomType effect)
 {
@@ -596,6 +653,43 @@ mm_player_audio_effect_custom_apply(MMHandleType hplayer)
 
 	return result;
 }
+
+
+int
+mm_player_audio_effect_bypass (MMHandleType hplayer)
+{
+	mm_player_t* player = (mm_player_t*)hplayer;
+	int result = MM_ERROR_NONE;
+	GstElement *audio_effect_element = NULL;
+
+	MMPLAYER_FENTER();
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	if ( !player->ini.use_audio_effect_preset && !player->ini.use_audio_effect_custom )
+	{
+		debug_error("audio effect(preset/custom) is not supported");
+		MMPLAYER_FLEAVE();
+		return MM_ERROR_NOT_SUPPORT_API;
+	}
+	if ( !player->pipeline || !player->pipeline->audiobin || !player->pipeline->audiobin[MMPLAYER_A_FILTER].gst )
+	{
+		debug_warning("effect element is not created yet.");
+	}
+	else
+	{
+		audio_effect_element = player->pipeline->audiobin[MMPLAYER_A_FILTER].gst;
+
+		/* order action to audio effect plugin */
+		g_object_set(audio_effect_element, "filter-action", MM_AUDIO_EFFECT_TYPE_NONE, NULL);
+		debug_log("filter-action = %d", MM_AUDIO_EFFECT_TYPE_NONE);
+	}
+
+	MMPLAYER_FLEAVE();
+
+	return result;
+}
+
 
 int
 _mmplayer_audio_effect_custom_set_level_ext(mm_player_t *player, MMAudioEffectCustomType custom_effect_type, int level)

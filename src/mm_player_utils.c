@@ -39,8 +39,6 @@
 #include <vconf-internal-sysman-keys.h>
 #include <vconf-internal-wifi-keys.h>
 
-#define READ_MAX_BUFFER_SIZE 1024
-
 int util_exist_file_path(const char *file_path)
 {
 	int fd = 0;
@@ -53,8 +51,7 @@ int util_exist_file_path(const char *file_path)
 
 	if (fd < 0)
 	{
-		char str_error[READ_MAX_BUFFER_SIZE];
-		debug_error("failed to open file by %s (%d)", strerror_r(errno, str_error, sizeof(str_error)), errno);
+		debug_error("failed to open file by %s (%d)", strerror(errno), errno);
 
 		if (EACCES == errno)
 			return MM_ERROR_PLAYER_PERMISSION_DENIED;
@@ -123,7 +120,6 @@ bool util_remove_file_backup(const char *backup_path)
 }
 
 #define DETECTION_PREFIX_SIZE	20
-//bool util_is_midi_type_by_mem(void *mem, int size)
 int util_is_midi_type_by_mem(void *mem, int size)
 {
 	const char *p = (const char *)mem;
@@ -165,7 +161,6 @@ int util_is_midi_type_by_mem(void *mem, int size)
 	return MM_AUDIO_CODEC_INVALID;
 }
 
-//bool util_is_midi_type_by_file(const char *file_path)
 int util_is_midi_type_by_file(const char *file_path)
 {
 	struct stat file_attrib;
@@ -202,78 +197,6 @@ int util_is_midi_type_by_file(const char *file_path)
 	fclose(fp);
 
 	return util_is_midi_type_by_mem(prefix, size);
-}
-
-/* messages are treated as warnings bcz those code should not be checked in.
- * and no error handling will supported for same manner.
- */
-gboolean
-__util_gst_pad_probe(GstPad *pad, GstBuffer *buffer, gpointer u_data)
-{
-	gint flag = (gint) u_data;
-	GstElement* parent = NULL;
-	gboolean ret = TRUE;
-
-	/* show name as default */
-	parent = (GstElement*)gst_object_get_parent(GST_OBJECT(pad));
-	if(parent == NULL)
-	{
-		debug_error("parent is null\n");
-		return false;
-	}
-
-	debug_log("PAD PROBE : %s:%s\n", GST_ELEMENT_NAME(parent), GST_PAD_NAME(pad));
-
-	/* show time stamp */
-	if ( flag & MM_PROBE_TIMESTAMP )
-	{
-		debug_log("ts : %u:%02u:%02u.%09u\n",  GST_TIME_ARGS(GST_BUFFER_TIMESTAMP(buffer)));
-	}
-
-	/* show buffer size */
-	if ( flag & MM_PROBE_BUFFERSIZE )
-	{
-		debug_log("buffer size : %ud\n", GST_BUFFER_SIZE(buffer));
-	}
-
-	/* show buffer duration */
-	if ( flag & MM_PROBE_BUFFER_DURATION )
-	{
-		debug_log("dur : %lld\n", GST_BUFFER_DURATION(buffer));
-	}
-
-	/* show buffer caps */
-	if ( flag & MM_PROBE_CAPS )
-	{
-		MMPLAYER_LOG_GST_CAPS_TYPE(GST_BUFFER_CAPS(buffer));
-	}
-
-	/* drop buffer if flag is on */
-	if ( flag & MM_PROBE_DROP_BUFFER )
-	{
-		debug_log("dropping\n");
-		ret = FALSE;
-	}
-
-	/* show clock time */
-	if ( flag & MM_PROBE_CLOCK_TIME )
-	{
-		GstClock* clock = NULL;
-		GstClockTime now = GST_CLOCK_TIME_NONE;
-
-		clock = GST_ELEMENT_CLOCK ( parent );
-
-		if ( clock )
-		{
-			now = gst_clock_get_time( clock );
-			debug_log("clock time : %" GST_TIME_FORMAT "\n", GST_TIME_ARGS( now ));
-		}
-	}
-
-	if ( parent )
-		gst_object_unref(parent);
-
-	return ret;
 }
 
 char**
@@ -364,12 +287,6 @@ util_is_sdp_file ( const char *path )
 	/* first, check extension name */
 	ret = g_str_has_suffix ( uri, "sdp" );
 
-	/* second, if no suffix is there, check it's contents */
-	if ( ! ret )
-	{
-		/* FIXIT : do it soon */
-	}
-
 	g_free( uri);
 	uri = NULL;
 
@@ -443,15 +360,15 @@ util_get_charset(const char *file_path)
 
 	ucsdet_enableInputFilter( ucsd, TRUE );
 
-	buf = g_malloc(READ_MAX_BUFFER_SIZE*READ_MAX_BUFFER_SIZE);
+	buf = g_malloc(1024*1024);
 	if (!buf)
 	{
 		debug_error("fail to alloc\n");
 		goto done;
 	}
 
-	n_size = fread( buf, 1, READ_MAX_BUFFER_SIZE*READ_MAX_BUFFER_SIZE, fin );
-	buf[READ_MAX_BUFFER_SIZE*READ_MAX_BUFFER_SIZE] = '\0';
+	n_size = fread( buf, 1, 1024*1024, fin );
+
 	if (!n_size)
 		goto done;
 
@@ -473,6 +390,11 @@ util_get_charset(const char *file_path)
 		goto done;
 	}
 
+	/* CP949 encoding is an extension of the EUC-KR and it is backwards compatible.*/
+	if(charset && !strcmp(charset, "EUC-KR")) {
+		charset = "CP949";
+	}
+
 done:
 	if(fin)
 		fclose(fin);
@@ -484,52 +406,6 @@ done:
 		g_free(buf);
 
 	return charset;
-}
-
-int
-util_get_is_connected_external_display(void)
-{
-  int is_connected_hdmi = -1;
-  int is_connected_mirroring = -1;
-
-	if (vconf_get_int(VCONFKEY_SYSMAN_HDMI, &is_connected_hdmi))
-		debug_error("[hdmi]vconf_set_int FAIL");
-	if (vconf_get_int(VCONFKEY_SCREEN_MIRRORING_STATE, &is_connected_mirroring))
-		debug_error("[mirroring]vconf_set_int FAIL");
-
-	/* if conneted with external display */
-	if (is_connected_mirroring == VCONFKEY_SCREEN_MIRRORING_CONNECTED) {
-		debug_warning ("connected with mirroring display");
-		return MMPLAYER_DISPLAY_MIRRORING_ACTIVE;
-	}
-	if (is_connected_hdmi == VCONFKEY_SYSMAN_HDMI_CONNECTED) {
-		debug_warning ("connected with external display");
-		return MMPLAYER_DISPLAY_HDMI_ACTIVE;
-	}
-	if ((is_connected_mirroring == VCONFKEY_SCREEN_MIRRORING_ACTIVATED || is_connected_mirroring == VCONFKEY_SCREEN_MIRRORING_DEACTIVATED) && is_connected_hdmi == VCONFKEY_SYSMAN_HDMI_DISCONNECTED) {
-		debug_warning ("non-connected status");
-		return MMPLAYER_DISPLAY_NULL;
-	}
-
-	debug_error ("it is not registered (%d, %d)", is_connected_mirroring, is_connected_hdmi);
-	return -1;
-}
-
-gboolean util_is_miracast_connected(void)
-{
-	int is_connected = 0;
-
-	if (vconf_get_bool(VCONFKEY_MIRACAST_WFD_SOURCE_STATUS, &is_connected) ) {
-		debug_error("failed to get miracast status key");
-		return FALSE;
-	}
-
-	if (VCONFKEY_MIRACAST_WFD_SOURCE_ON == is_connected) {
-		debug_warning("miracast connected");
-		return TRUE;
-	}
-
-	return FALSE;
 }
 
 int util_get_pixtype(unsigned int fourcc)
@@ -548,6 +424,9 @@ int util_get_pixtype(unsigned int fourcc)
 	case GST_MAKE_FOURCC ('S', 'N', '1', '2'):
 	case GST_MAKE_FOURCC ('N', 'V', '1', '2'):
 		pixtype = MM_PIXEL_FORMAT_NV12;
+		break;
+	case GST_MAKE_FOURCC ('S', 'T', '1', '2'):
+		pixtype = MM_PIXEL_FORMAT_NV12T;
 		break;
 	case GST_MAKE_FOURCC ('S', 'N', '2', '1'):
 	case GST_MAKE_FOURCC ('N', 'V', '2', '1'):
@@ -591,12 +470,9 @@ int util_get_pixtype(unsigned int fourcc)
 	case GST_MAKE_FOURCC ('P', 'N', 'G', ' '):
 		pixtype = MM_PIXEL_FORMAT_ENCODED;
 		break;
-	/*FIXME - ITLV */
+	/*FIXME*/
 	case GST_MAKE_FOURCC ('I', 'T', 'L', 'V'):
 		pixtype = MM_PIXEL_FORMAT_ITLV_JPEG_UYVY;
-		break;
-	case GST_MAKE_FOURCC ('S', 'T', '1', '2'):
-		pixtype = MM_PIXEL_FORMAT_NV12T;
 		break;
 	default:
 		debug_error("Not supported fourcc type(%c%c%c%c)",
