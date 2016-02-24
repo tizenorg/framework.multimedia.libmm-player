@@ -893,7 +893,24 @@ typedef struct _AudioStreamInfo
 	unsigned int extradata_size;
 	unsigned int version;
 	unsigned int user_info;
+
+	/* for pcm */
+//	unsigned int width;
+//	unsigned int depth;
+//	unsigned int endianness;
+//	bool signedness;
 }MMPlayerAudioStreamInfo;
+
+/**
+ * Subtitle stream info in external demux case
+ *
+**/
+typedef struct _SubtitleStreamInfo
+{
+	const char *mime;
+	unsigned int codec_tag;
+	void *context;  //for smpte text
+}MMPlayerSubtitleStreamInfo;
 
 /**
  * Audio stream callback function type.
@@ -2066,6 +2083,18 @@ int mm_player_set_video_info (MMHandleType player, media_format_h format);
  */
 
 int mm_player_set_audio_info (MMHandleType player, media_format_h format);
+
+/**mm_player_set_subtitle_info
+ * This function is to set caps of src pad of subtitle appsrc in external feeder case.  \n
+ * @param       player                          [in]    Handle of player.
+ * @param       subtitle_stream_info               [in]    Subtitle stream info.
+ * @return      This function returns zero on success, or negative value with error code.
+ * @par Example
+ *
+ * @endcode
+ */
+
+int mm_player_set_subtitle_info (MMHandleType player, MMPlayerSubtitleStreamInfo *info);
 
 /**
  * This function set callback function for receiving need or enough data message from player.

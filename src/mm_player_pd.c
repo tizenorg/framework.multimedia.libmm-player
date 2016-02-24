@@ -58,6 +58,8 @@ __pd_downloader_callback(GstBus *bus, GstMessage *msg, gpointer data)
 
 	return_val_if_fail ( pd, MM_ERROR_INVALID_ARGUMENT );
 
+//	g_print("%s\n", GST_MESSAGE_TYPE_NAME(msg));
+
 	switch ( GST_MESSAGE_TYPE( msg ) )
 	{
 		case GST_MESSAGE_EOS:
@@ -165,6 +167,8 @@ __pd_downloader_callback(GstBus *bus, GstMessage *msg, gpointer data)
 				gst_element_post_message (pd->playback_pipeline_src, new_msg);
 
 				g_error_free (err);
+
+				// TODO: check if playback pipeline is closed well or not
 				g_object_set (G_OBJECT (pd->playback_pipeline_src), "eos", TRUE, NULL);
 
 				_mmplayer_unrealize_pd_downloader ((MMHandleType)data);

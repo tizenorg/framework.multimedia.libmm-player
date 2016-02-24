@@ -113,14 +113,15 @@ enum alassink_sync
  */
 enum MMPlayerUriType {
 	MM_PLAYER_URI_TYPE_NONE, 		/**< Player URI type None */
-	MM_PLAYER_URI_TYPE_URL_RTSP, 	/**< Player URI type RTSP */
+	MM_PLAYER_URI_TYPE_URL_RTSP,	/**< Player URI type RTSP */
+	MM_PLAYER_URI_TYPE_URL_WFD,  /**< Player URI type WFD */
 	MM_PLAYER_URI_TYPE_URL_HTTP,/**< Player URI type HTTP */
 	MM_PLAYER_URI_TYPE_URL_MMS,/**< Player URI type MMS */
 	MM_PLAYER_URI_TYPE_MEM,		/**< Player URI type Mem */
 	MM_PLAYER_URI_TYPE_FILE, 		/**< Player URI type File */
 	MM_PLAYER_URI_TYPE_URL, 		/**< Player URI type URL */
 	MM_PLAYER_URI_TYPE_BUFF, 		/**< Player URI type Buffer */
-	MM_PLAYER_URI_TYPE_MS_BUFF,		/**< Player URI type Media Stream Buffer */
+	MM_PLAYER_URI_TYPE_ES_BUFF,		/**< Player URI type ES Buffer */
 	MM_PLAYER_URI_TYPE_HLS,			/**< Player URI type http live streaming */
 	MM_PLAYER_URI_TYPE_SS,			/**< Player URI type Smooth streaming */
 	MM_PLAYER_URI_TYPE_DASH,			/**< Player URI type Mpeg Dash */

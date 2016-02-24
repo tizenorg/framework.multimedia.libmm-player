@@ -307,7 +307,6 @@ int _mmplayer_get_track_language_code(MMHandleType hplayer, MMPlayerTrackType ty
 		language_list = g_list_nth_data (player->subtitle_language_list, index);
 		if (language_list == NULL)
 		{
-			ret = MM_ERROR_PLAYER_NO_OP;
 			debug_log ("%d is not a proper index \n", index);
 			goto EXIT;
 		}

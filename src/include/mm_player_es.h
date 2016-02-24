@@ -38,11 +38,13 @@ extern "C"
 | GLOBAL FUNCTION PROTOTYPES								|
 ========================================================================================*/
 
-int _mmplayer_set_media_stream_video_info (MMHandleType player, media_format_h format);
+int _mmplayer_set_video_info (MMHandleType player, media_format_h format);
 
-int _mmplayer_set_media_stream_audio_info (MMHandleType player, media_format_h format);
+int _mmplayer_set_audio_info (MMHandleType player, media_format_h format);
 
-int _mmplayer_submit_media_stream_packet (MMHandleType player, media_packet_h packet);
+int _mmplayer_set_subtitle_info (MMHandleType player, MMPlayerSubtitleStreamInfo * info);
+
+int _mmplayer_submit_packet (MMHandleType player, media_packet_h packet);
 
 int _mmplayer_set_media_stream_buffer_status_cb (MMHandleType player,
                                                  MMPlayerStreamType type,

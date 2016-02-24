@@ -130,7 +130,7 @@ typedef struct
 
 	gboolean	is_buffering;
 	gboolean	is_buffering_done;	/* get info from bus sync callback */
-	gboolean	is_adaptive_streaming;
+	gboolean 	is_adaptive_streaming;
 
 	gint		buffering_percent;
 

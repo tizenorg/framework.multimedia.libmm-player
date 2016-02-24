@@ -113,6 +113,8 @@
  */
 #define g_array_undef_struct_idx_p(a,t,i)	((t *)(void *)((a)->data + ((i) * (a)->len)))
 
+//#define ENABLE_DRMSRC
+
 /*---------------------------------------------------------------------------
 |    LOCAL CONSTANT DEFINITIONS:											|
 ---------------------------------------------------------------------------*/
@@ -149,6 +151,7 @@ static void 	__mmplayer_gst_decode_callback(GstElement *decodebin, GstPad *pad, 
 static void		__mmplayer_gst_decode_unknown_type(GstElement *elem,  GstPad* pad, GstCaps *caps, gpointer data);
 static gboolean __mmplayer_gst_decode_autoplug_continue(GstElement *bin,  GstPad* pad, GstCaps * caps,  gpointer data);
 static gint __mmplayer_gst_decode_autoplug_select(GstElement *bin,  GstPad* pad, GstCaps * caps, GstElementFactory* factory, gpointer data);
+//static GValueArray* __mmplayer_gst_decode_autoplug_factories(GstElement *bin,  GstPad* pad, GstCaps * caps,  gpointer data);
 static void __mmplayer_gst_decode_pad_removed(GstElement *elem,  GstPad* new_pad, gpointer data);
 static void __mmplayer_gst_decode_drained(GstElement *bin, gpointer data);
 static void 	__mmplayer_gst_element_added(GstElement* bin, GstElement* element, gpointer data);
@@ -161,12 +164,14 @@ static void 	__mmplayer_pipeline_complete(GstElement *decodebin,  gpointer data)
 static gboolean __mmplayer_is_midi_type(gchar* str_caps);
 static gboolean __mmplayer_is_only_mp3_type (gchar *str_caps);
 static void 	__mmplayer_set_audio_attrs(mm_player_t* player, GstCaps* caps);
+//static void 	__mmplayer_check_video_zero_cpoy(mm_player_t* player, GstElementFactory* factory);
 
 static gboolean	__mmplayer_close_link(mm_player_t* player, GstPad *srcpad, GstElement *sinkelement, const char *padname, const GList *templlist);
 static gboolean __mmplayer_feature_filter(GstPluginFeature *feature, gpointer data);
 static void 	__mmplayer_add_new_pad(GstElement *element, GstPad *pad, gpointer data);
 
 static void		__mmplayer_gst_rtp_no_more_pads (GstElement *element,  gpointer data);
+//static void    __mmplayer_gst_wfd_dynamic_pad (GstElement *element, GstPad *pad, gpointer data);
 static void		__mmplayer_gst_rtp_dynamic_pad (GstElement *element, GstPad *pad, gpointer data);
 static gboolean	__mmplayer_get_stream_service_type( mm_player_t* player );
 static gboolean	__mmplayer_update_subtitle( GstElement* object, GstBuffer *buffer, GstPad *pad, gpointer data);
@@ -252,13 +257,14 @@ static void __mmplayer_set_unlinked_mime_type(mm_player_t* player, GstCaps *caps
 const gchar * __get_state_name ( int state );
 static gboolean __is_streaming( mm_player_t* player );
 static gboolean __is_rtsp_streaming( mm_player_t* player );
+static gboolean __is_wfd_streaming( mm_player_t* player );
 static gboolean __is_live_streaming ( mm_player_t* player );
 static gboolean __is_http_streaming( mm_player_t* player );
 static gboolean __is_http_live_streaming( mm_player_t* player );
 static gboolean __is_dash_streaming( mm_player_t* player );
 static gboolean __is_smooth_streaming( mm_player_t* player );
 static gboolean __is_http_progressive_down(mm_player_t* player);
-static gboolean __is_ms_buff_src(mm_player_t* player);
+static gboolean __is_es_buff_src(mm_player_t* player);
 static gboolean __has_suffix(mm_player_t * player, const gchar * suffix);
 
 static GstBusSyncReply __mmplayer_bus_sync_callback (GstBus * bus, GstMessage * message, gpointer data);
@@ -275,6 +281,10 @@ static void __mmplayer_activate_next_source(mm_player_t *player, GstState target
 static void __mmplayer_check_pipeline(mm_player_t* player);
 static gboolean __mmplayer_deactivate_selector(mm_player_t *player, MMPlayerTrackType type);
 static void __mmplayer_deactivate_old_path(mm_player_t *player);
+#if 0 // We'll need this in future.
+static int __mmplayer_gst_switching_element(mm_player_t *player, GstElement *search_from, const gchar *removal_name, const gchar *new_element_name);
+#endif
+
 static void __mmplayer_update_buffer_setting(mm_player_t *player, GstMessage *buffering_msg);
 static GstElement *__mmplayer_element_create_and_link(mm_player_t *player, GstPad* pad, const char* name);
 static gboolean __mmplayer_can_do_interrupt(mm_player_t *player);
@@ -334,11 +344,14 @@ print_tag (const GstTagList * list, const gchar * tag, gpointer unused)
 #endif
 
 /* implementing player FSM */
+/* FIXIT : We need to handle state transition also at here since start api is no more sync */
 static int
 __mmplayer_check_state(mm_player_t* player, enum PlayerCommandState command)
 {
 	MMPlayerStateType current_state = MM_PLAYER_STATE_NUM;
 	MMPlayerStateType pending_state = MM_PLAYER_STATE_NUM;
+//	MMPlayerStateType target_state = MM_PLAYER_STATE_NUM;
+//	MMPlayerStateType prev_state = MM_PLAYER_STATE_NUM;
 
 	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
 
@@ -346,6 +359,8 @@ __mmplayer_check_state(mm_player_t* player, enum PlayerCommandState command)
 
 	current_state = MMPLAYER_CURRENT_STATE(player);
 	pending_state = MMPLAYER_PENDING_STATE(player);
+//	target_state = MMPLAYER_TARGET_STATE(player);
+//	prev_state = MMPLAYER_PREV_STATE(player);
 
 	MMPLAYER_PRINT_STATE(player);
 
@@ -529,7 +544,7 @@ ALREADY_GOING:
 }
 
 int
-__mmplayer_gst_set_state (mm_player_t* player, GstElement * element,  GstState state, gboolean async, gint timeout)
+__mmplayer_gst_set_state (mm_player_t* player, GstElement * element,  GstState state, gboolean async, gint timeout) // @
 {
 	GstState element_state = GST_STATE_VOID_PENDING;
 	GstState element_pending_state = GST_STATE_VOID_PENDING;
@@ -591,7 +606,7 @@ __mmplayer_gst_set_state (mm_player_t* player, GstElement * element,  GstState s
 
 static void
 __mmplayer_videostream_cb(GstElement *element, void *data,
-int width, int height, gpointer user_data)
+int width, int height, gpointer user_data) // @
 {
  	mm_player_t* player = (mm_player_t*)user_data;
 
@@ -713,6 +728,7 @@ __mmplayer_device_change_post_process(gpointer user)
 	{
 		debug_log("setting async");
 
+		/* TODO : need some comment here */
 		if (player->pipeline->textbin && player->pipeline->textbin[MMPLAYER_T_FAKE_SINK].gst)
 			g_object_set (G_OBJECT (player->pipeline->textbin[MMPLAYER_T_FAKE_SINK].gst), "async", TRUE, NULL);
 	}
@@ -838,7 +854,7 @@ __mmplayer_sound_device_info_changed_cb_func (MMSoundDevice_t device_h, int chan
 /* This function should be called after the pipeline goes PAUSED or higher
 state. */
 gboolean
-_mmplayer_update_content_attrs(mm_player_t* player, enum content_attr_flag flag)
+_mmplayer_update_content_attrs(mm_player_t* player, enum content_attr_flag flag) // @
 {
 	static gboolean has_duration = FALSE;
 	static gboolean has_video_attrs = FALSE;
@@ -916,6 +932,7 @@ _mmplayer_update_content_attrs(mm_player_t* player, enum content_attr_flag flag)
 		/* check duration is OK */
 		if ( dur_nsec == 0 && !MMPLAYER_IS_LIVE_STREAMING( player ) )
 		{
+			/* FIXIT : find another way to get duration here. */
 			debug_error("finally it's failed to get duration from pipeline. progressbar will not work correctely!");
 		}
 		else
@@ -1051,6 +1068,7 @@ _mmplayer_update_content_attrs(mm_player_t* player, enum content_attr_flag flag)
 	{
 		has_bitrate = FALSE;
 
+		/* FIXIT : please make it clear the dependancy with duration/codec/uritype */
 		if (player->duration)
 		{
 			guint64 data_size = 0;
@@ -1149,7 +1167,7 @@ gint __mmplayer_get_stream_service_type( mm_player_t* player )
  * it to applicaton by calling callback function
  */
 static int
-__mmplayer_set_state(mm_player_t* player, int state)
+__mmplayer_set_state(mm_player_t* player, int state) // @
 {
 	MMMessageParamType msg = {0, };
 	int asm_result = MM_ERROR_NONE;
@@ -1170,6 +1188,11 @@ __mmplayer_set_state(mm_player_t* player, int state)
 	MMPLAYER_PREV_STATE(player) = MMPLAYER_CURRENT_STATE(player);
 	MMPLAYER_CURRENT_STATE(player) = state;
 
+	/* FIXIT : it's better to do like below code
+	if ( MMPLAYER_CURRENT_STATE(player) == MMPLAYER_TARGET_STATE(player) )
+			MMPLAYER_PENDING_STATE(player) = MM_PLAYER_STATE_NONE;
+	and add more code to handling PENDING_STATE.
+	*/
 	if ( MMPLAYER_CURRENT_STATE(player) == MMPLAYER_PENDING_STATE(player) )
 		MMPLAYER_PENDING_STATE(player) = MM_PLAYER_STATE_NONE;
 
@@ -1228,6 +1251,7 @@ __mmplayer_set_state(mm_player_t* player, int state)
 			if ( ! player->audio_cb_probe_id && player->set_mode.pcm_extraction && !player->audio_stream_render_cb_ex)
 			{
 				__mmplayer_configure_audio_callback(player);
+				/* FIXIT : handle return value */
 			}
 
 			if (!MMPLAYER_IS_STREAMING(player) || (player->streamer && !player->streamer->is_buffering))
@@ -1383,7 +1407,7 @@ __mmplayer_set_state(mm_player_t* player, int state)
 }
 
 gboolean
-__mmplayer_post_message(mm_player_t* player, enum MMMessageType msgtype, MMMessageParamType* param)
+__mmplayer_post_message(mm_player_t* player, enum MMMessageType msgtype, MMMessageParamType* param) // @
 {
 	return_val_if_fail( player, FALSE );
 
@@ -1591,11 +1615,8 @@ __mmplayer_handle_buffering_message ( mm_player_t* player )
 	target_state = MMPLAYER_TARGET_STATE(player);
 	pending_state = MMPLAYER_PENDING_STATE(player);
 
-	if ((MMPLAYER_IS_LIVE_STREAMING(player)) && (MMPLAYER_IS_RTSP_STREAMING(player)))
-	{
-		debug_warning("Buffering Pause disabled for RTSP Live Streaming Feeds !!\n");
+	if (MMPLAYER_IS_LIVE_STREAMING(player))
 		return;
-	}
 
 	if ( !player->streamer->is_buffering )
 	{
@@ -1766,7 +1787,7 @@ __mmplayer_drop_subtitle(mm_player_t* player, gboolean is_drop)
 }
 
 static gboolean
-__mmplayer_gst_callback(GstBus *bus, GstMessage *msg, gpointer data)
+__mmplayer_gst_callback(GstBus *bus, GstMessage *msg, gpointer data) // @
 {
 	mm_player_t* player = (mm_player_t*) data;
 	gboolean ret = TRUE;
@@ -2125,11 +2146,20 @@ __mmplayer_gst_callback(GstBus *bus, GstMessage *msg, gpointer data)
 
 				case GST_STATE_PLAYING:
 				{
+/* for audio tunning */
+#ifndef IS_SDK
+					if (player->can_support_codec == 0x03) {
+						gint volume_type;
+						mm_attrs_get_int_by_name(player->attrs, "sound_volume_type", &volume_type);
+						volume_type |= MM_SOUND_VOLUME_GAIN_VIDEO;
+						g_object_set(player->pipeline->audiobin[MMPLAYER_A_SINK].gst, "volumetype", volume_type, NULL);
+					}
+#endif
 					if ( MMPLAYER_IS_STREAMING(player) ) // managed prepare async case when buffering is completed
 					{
 						// pending state should be reset oyherwise, it's still playing even though it's resumed after bufferging.
-						if ((MMPLAYER_CURRENT_STATE(player) != MM_PLAYER_STATE_PLAYING)
-							|| (MMPLAYER_PENDING_STATE(player) == MM_PLAYER_STATE_PLAYING))
+						if ((MMPLAYER_CURRENT_STATE(player) != MM_PLAYER_STATE_PLAYING) ||
+							(MMPLAYER_PENDING_STATE(player) == MM_PLAYER_STATE_PLAYING))
 						{
 							MMPLAYER_SET_STATE ( player, MM_PLAYER_STATE_PLAYING);
 						}
@@ -2359,6 +2389,11 @@ __mmplayer_gst_callback(GstBus *bus, GstMessage *msg, gpointer data)
 		break;
 	}
 
+	/* FIXIT : this cause so many warnings/errors from glib/gstreamer. we should not call it since
+	 * gst_element_post_message api takes ownership of the message.
+	 */
+	//gst_message_unref( msg );
+
 	return ret;
 }
 
@@ -2396,7 +2431,7 @@ __mmplayer_gst_handle_duration(mm_player_t* player, GstMessage* msg)
 
 
 static gboolean
-__mmplayer_gst_extract_tag_from_msg(mm_player_t* player, GstMessage* msg)
+__mmplayer_gst_extract_tag_from_msg(mm_player_t* player, GstMessage* msg) // @
 {
 
 /* macro for better code readability */
@@ -2489,6 +2524,29 @@ if (gst_tag_list_get_date(tag_list, gsttag, &date))\
 		g_date_free(date);\
 	}\
 }
+
+#define MMPLAYER_UPDATE_TAG_UINT64(gsttag, attribute, playertag) \
+if(gst_tag_list_get_uint64(tag_list, gsttag, &v_uint64))\
+{\
+	if(v_uint64)\
+	{\
+		/* FIXIT : don't know how to store date */\
+		g_assert(1);\
+		v_uint64 = 0;\
+	}\
+}
+
+#define MMPLAYER_UPDATE_TAG_DOUBLE(gsttag, attribute, playertag) \
+if(gst_tag_list_get_double(tag_list, gsttag, &v_double))\
+{\
+	if(v_double)\
+	{\
+		/* FIXIT : don't know how to store date */\
+		g_assert(1);\
+		v_double = 0;\
+	}\
+}
+
 	/* function start */
 	GstTagList* tag_list = NULL;
 
@@ -2502,6 +2560,10 @@ if (gst_tag_list_get_date(tag_list, gsttag, &date))\
 	gint index = 0;
 	MMMessageParamType msg_param = {0, };
 
+	/* currently not used. but those are needed for above macro */
+	//guint64 v_uint64 = 0;
+	//gdouble v_double = 0;
+
 	return_val_if_fail( player && msg, FALSE );
 
 	attrs = MMPLAYER_GET_ATTRS(player);
@@ -2513,19 +2575,50 @@ if (gst_tag_list_get_date(tag_list, gsttag, &date))\
 
 	/* store tags to player attributes */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_TITLE, attrs, "tag_title");
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_TITLE_SORTNAME, ?, ?); */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_ARTIST, attrs, "tag_artist");
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_ARTIST_SORTNAME, ?, ?); */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_ALBUM, attrs, "tag_album");
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_ALBUM_SORTNAME, ?, ?); */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_COMPOSER, attrs, "tag_author");
 	MMPLAYER_UPDATE_TAG_DATE(GST_TAG_DATE, attrs, "tag_date");
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_GENRE, attrs, "tag_genre");
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_COMMENT, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_EXTENDED_COMMENT, ?, ?); */
 	MMPLAYER_UPDATE_TAG_UINT(GST_TAG_TRACK_NUMBER, attrs, "tag_track_num");
+	/* MMPLAYER_UPDATE_TAG_UINT(GST_TAG_TRACK_COUNT, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_UINT(GST_TAG_ALBUM_VOLUME_NUMBER, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_UINT(GST_TAG_ALBUM_VOLUME_COUNT, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_LOCATION, ?, ?); */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_DESCRIPTION, attrs, "tag_description");
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_VERSION, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_ISRC, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_ORGANIZATION, ?, ?); */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_COPYRIGHT, attrs, "tag_copyright");
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_COPYRIGHT_URI, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_CONTACT, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_LICENSE, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_LICENSE_URI, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_PERFORMER, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_UINT64(GST_TAG_DURATION, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_CODEC, ?, ?); */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_VIDEO_CODEC, attrs, "content_video_codec");
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_AUDIO_CODEC, attrs, "content_audio_codec");
 	MMPLAYER_UPDATE_TAG_UINT(GST_TAG_BITRATE, attrs, "content_bitrate");
 	MMPLAYER_UPDATE_TAG_UINT(GST_TAG_MAXIMUM_BITRATE, attrs, "content_max_bitrate");
 	MMPLAYER_UPDATE_TAG_IMAGE(GST_TAG_IMAGE, attrs, "tag_album_cover");
+	/* MMPLAYER_UPDATE_TAG_UINT(GST_TAG_NOMINAL_BITRATE, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_UINT(GST_TAG_MINIMUM_BITRATE, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_UINT(GST_TAG_SERIAL, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_ENCODER, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_UINT(GST_TAG_ENCODER_VERSION, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_DOUBLE(GST_TAG_TRACK_GAIN, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_DOUBLE(GST_TAG_TRACK_PEAK, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_DOUBLE(GST_TAG_ALBUM_GAIN, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_DOUBLE(GST_TAG_ALBUM_PEAK, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_DOUBLE(GST_TAG_REFERENCE_LEVEL, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_STRING(GST_TAG_LANGUAGE_CODE, ?, ?); */
+	/* MMPLAYER_UPDATE_TAG_DOUBLE(GST_TAG_BEATS_PER_MINUTE, ?, ?); */
 	MMPLAYER_UPDATE_TAG_STRING(GST_TAG_IMAGE_ORIENTATION, attrs, "content_video_orientation");
 
 	if ( mmf_attrs_commit ( attrs ) )
@@ -2537,7 +2630,7 @@ if (gst_tag_list_get_date(tag_list, gsttag, &date))\
 }
 
 static void
-__mmplayer_gst_rtp_no_more_pads (GstElement *element,  gpointer data)
+__mmplayer_gst_rtp_no_more_pads (GstElement *element,  gpointer data)  // @
 {
 	mm_player_t* player = (mm_player_t*) data;
 
@@ -2578,7 +2671,7 @@ __mmplayer_gst_rtp_no_more_pads (GstElement *element,  gpointer data)
 }
 
 static gboolean
-__mmplayer_gst_remove_fakesink(mm_player_t* player, MMPlayerGstElement* fakesink)
+__mmplayer_gst_remove_fakesink(mm_player_t* player, MMPlayerGstElement* fakesink) // @
 {
 	GstElement* parent = NULL;
 
@@ -2612,6 +2705,9 @@ __mmplayer_gst_remove_fakesink(mm_player_t* player, MMPlayerGstElement* fakesink
 	if ( GST_STATE_CHANGE_FAILURE == gst_element_set_state (fakesink->gst, GST_STATE_NULL) )
 	{
 		debug_error("fakesink state change failure!\n");
+
+		/* FIXIT : should I return here? or try to proceed to next? */
+		/* return FALSE; */
 	}
 
 	/* remove fakesink from it's parent */
@@ -2645,7 +2741,7 @@ ERROR:
 
 
 static void
-__mmplayer_gst_rtp_dynamic_pad (GstElement *element, GstPad *pad, gpointer data)
+__mmplayer_gst_rtp_dynamic_pad (GstElement *element, GstPad *pad, gpointer data) // @
 {
 	GstPad *sinkpad = NULL;
 	GstCaps* caps = NULL;
@@ -2971,7 +3067,7 @@ __mmplayer_gst_decode_pad_added (GstElement *elem, GstPad *pad, gpointer data)
 			gint samplerate = 0;
 			gint channels = 0;
 
-			if (MMPLAYER_IS_MS_BUFF_SRC(player))
+			if (MMPLAYER_IS_ES_BUFF_SRC(player))
 			{
 				__mmplayer_gst_decode_callback (elem, pad, player);
 				return;
@@ -3045,6 +3141,7 @@ __mmplayer_gst_decode_pad_added (GstElement *elem, GstPad *pad, gpointer data)
 		player->pipeline->mainbin[elemId].gst = selector;
 
 		first_track = TRUE;
+		// player->selector[stream_type].active_pad_index = DEFAULT_TRACK;	// default
 
 		srcpad = gst_element_get_static_pad (selector, "src");
 
@@ -3232,6 +3329,7 @@ int _mmplayer_gst_set_audio_channel(MMHandleType hplayer, MMPlayerAudioChannel c
 	sinkpad = gst_element_get_static_pad (mainbin[MMPLAYER_M_A_SELECTOR].gst, change_pad_name);
 	if (sinkpad == NULL)
 	{
+		//result = MM_ERROR_PLAYER_INTERNAL;
 		goto ERROR;	/* keep playing */
 	}
 
@@ -3757,7 +3855,7 @@ __mmplayer_gst_decode_no_more_pads (GstElement *elem, gpointer data)
 	}
 
 
-	if (!MMPLAYER_IS_MS_BUFF_SRC(player))
+	if (!MMPLAYER_IS_ES_BUFF_SRC(player))
 	{
 		if (text_selector)
 		{
@@ -3782,7 +3880,7 @@ ERROR:
 }
 
 static void
-__mmplayer_gst_decode_callback(GstElement *elem, GstPad *pad, gpointer data)
+__mmplayer_gst_decode_callback(GstElement *elem, GstPad *pad, gpointer data) // @
 {
 	mm_player_t* player = NULL;
 	MMHandleType attrs = 0;
@@ -4119,6 +4217,12 @@ __mmplayer_gst_decode_callback(GstElement *elem, GstPad *pad, gpointer data)
 		__mmplayer_pipeline_complete (NULL, player);
 	}
 
+	/* FIXIT : please leave a note why this code is needed */
+	if(MMPLAYER_IS_WFD_STREAMING( player ))
+	{
+		player->no_more_pad = TRUE;
+	}
+
 ERROR:
 
 	MMPLAYER_FREEIF(caps_str);
@@ -4275,7 +4379,7 @@ __mmplayer_get_property_value_for_rotation(mm_player_t* player, int rotation_ang
 }
 
 int
-_mmplayer_update_video_param(mm_player_t* player)
+_mmplayer_update_video_param(mm_player_t* player) // @
 {
 	MMHandleType attrs = 0;
 	int surface_type = 0;
@@ -4423,6 +4527,7 @@ _mmplayer_update_video_param(mm_player_t* player)
 			}
 			else
 			{
+				/* FIXIT : is it error case? */
 				debug_warning("still we don't have xid on player attribute. create it's own surface.");
 			}
 
@@ -4694,7 +4799,7 @@ _mmplayer_update_video_param(mm_player_t* player)
 }
 
 static int
-__mmplayer_gst_element_link_bucket(GList* element_bucket)
+__mmplayer_gst_element_link_bucket(GList* element_bucket) // @
 {
 	GList* bucket = element_bucket;
 	MMPlayerGstElement* element = NULL;
@@ -4747,7 +4852,7 @@ __mmplayer_gst_element_link_bucket(GList* element_bucket)
 }
 
 static int
-__mmplayer_gst_element_add_bucket_to_bin(GstBin* bin, GList* element_bucket)
+__mmplayer_gst_element_add_bucket_to_bin(GstBin* bin, GList* element_bucket) // @
 {
 	GList* bucket = element_bucket;
 	MMPlayerGstElement* element = NULL;
@@ -5127,6 +5232,9 @@ __mmplayer_gst_create_audio_pipeline(mm_player_t* player)
 
 	player->set_mode.pcm_extraction = __mmplayer_can_extract_pcm(player);
 
+	/* Adding audiotp plugin for reverse trickplay feature */
+//	MMPLAYER_CREATE_ELEMENT(audiobin, MMPLAYER_A_TP, "audiotp", "audio trickplay", TRUE, player);
+
 	/* converter */
 	MMPLAYER_CREATE_ELEMENT(audiobin, MMPLAYER_A_CONV, "audioconvert", "audio converter", TRUE, player);
 
@@ -5212,6 +5320,7 @@ __mmplayer_gst_create_audio_pipeline(mm_player_t* player)
 	}
 	else // normal playback
 	{
+		//GstCaps* caps = NULL;
 		gint channels = 0;
 
 		/* for logical volume control */
@@ -5223,6 +5332,18 @@ __mmplayer_gst_create_audio_pipeline(mm_player_t* player)
 			debug_log("mute enabled\n");
 			g_object_set(G_OBJECT (audiobin[MMPLAYER_A_VOL].gst), "mute", player->sound.mute, NULL);
 		}
+
+#if 0
+		/*capsfilter */
+		MMPLAYER_CREATE_ELEMENT(audiobin, MMPLAYER_A_CAPS_DEFAULT, "capsfilter", "audiocapsfilter", TRUE, player);
+		caps = gst_caps_from_string( "audio/x-raw-int, "
+					"endianness = (int) LITTLE_ENDIAN, "
+					"signed = (boolean) true, "
+					"width = (int) 16, "
+					"depth = (int) 16" );
+		g_object_set (GST_ELEMENT(audiobin[MMPLAYER_A_CAPS_DEFAULT].gst), "caps", caps, NULL );
+		gst_caps_unref( caps );
+#endif
 
 		/* chech if multi-chennels */
 		if (player->pipeline->mainbin && player->pipeline->mainbin[MMPLAYER_M_DEMUX].gst)
@@ -6337,14 +6458,13 @@ __mmplayer_subtitle_adjust_position_probe (GstPad *pad, GstPadProbeInfo *info, g
 
 	return GST_PAD_PROBE_OK;
 }
-
 static int 	__gst_adjust_subtitle_position(mm_player_t* player, int format, int position)
 {
 	MMPLAYER_FENTER();
 
 	/* check player and subtitlebin are created */
 	return_val_if_fail ( player && player->pipeline, MM_ERROR_PLAYER_NOT_INITIALIZED );
-	return_val_if_fail ( player->play_subtitle, MM_ERROR_PLAYER_NO_OP );
+	return_val_if_fail ( player->play_subtitle, MM_ERROR_NOT_SUPPORT_API );
 
 	if (position == 0)
 	{
@@ -6416,7 +6536,7 @@ static int __gst_adjust_video_position(mm_player_t* player, int offset)
 }
 
 static void
-__gst_appsrc_feed_data_mem(GstElement *element, guint size, gpointer user_data)
+__gst_appsrc_feed_data_mem(GstElement *element, guint size, gpointer user_data) // @
 {
 	GstElement *appsrc = element;
 	tBuffer *buf = (tBuffer *)user_data;
@@ -6452,7 +6572,7 @@ __gst_appsrc_feed_data_mem(GstElement *element, guint size, gpointer user_data)
 }
 
 static gboolean
-__gst_appsrc_seek_data_mem(GstElement *element, guint64 size, gpointer user_data)
+__gst_appsrc_seek_data_mem(GstElement *element, guint64 size, gpointer user_data) // @
 {
 	tBuffer *buf = (tBuffer *)user_data;
 
@@ -6464,7 +6584,7 @@ __gst_appsrc_seek_data_mem(GstElement *element, guint64 size, gpointer user_data
 }
 
 static void
-__gst_appsrc_feed_data(GstElement *element, guint size, gpointer user_data)
+__gst_appsrc_feed_data(GstElement *element, guint size, gpointer user_data) // @
 {
 	mm_player_t *player  = (mm_player_t*)user_data;
 	MMPlayerStreamType type = MM_PLAYER_STREAM_TYPE_DEFAULT;
@@ -6478,7 +6598,7 @@ __gst_appsrc_feed_data(GstElement *element, guint size, gpointer user_data)
 }
 
 static gboolean
-__gst_appsrc_seek_data(GstElement *element, guint64 offset, gpointer user_data)
+__gst_appsrc_seek_data(GstElement *element, guint64 offset, gpointer user_data) // @
 {
 	mm_player_t *player  = (mm_player_t*)user_data;
 	MMPlayerStreamType type = MM_PLAYER_STREAM_TYPE_DEFAULT;
@@ -6495,7 +6615,7 @@ __gst_appsrc_seek_data(GstElement *element, guint64 offset, gpointer user_data)
 
 
 static gboolean
-__gst_appsrc_enough_data(GstElement *element, gpointer user_data)
+__gst_appsrc_enough_data(GstElement *element, gpointer user_data) // @
 {
 	mm_player_t *player  = (mm_player_t*)user_data;
 	MMPlayerStreamType type = MM_PLAYER_STREAM_TYPE_DEFAULT;
@@ -6511,15 +6631,21 @@ __gst_appsrc_enough_data(GstElement *element, gpointer user_data)
 }
 
 int
-_mmplayer_push_buffer(MMHandleType hplayer, unsigned char *buf, int size)
+_mmplayer_push_buffer(MMHandleType hplayer, unsigned char *buf, int size) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
-	GstBuffer *buffer = NULL;
-	GstFlowReturn gst_ret = GST_FLOW_OK;
+    	GstBuffer *buffer = NULL;
+    	GstFlowReturn gst_ret = GST_FLOW_OK;
 	int ret = MM_ERROR_NONE;
+//	gint len = size;
 
 	MMPLAYER_FENTER();
+
 	return_val_if_fail ( player, MM_ERROR_PLAYER_NOT_INITIALIZED );
+
+	/* check current state */
+//	MMPLAYER_CHECK_STATE_RETURN_IF_FAIL( player, MMPLAYER_COMMAND_START );
+
 
 	/* NOTE : we should check and create pipeline again if not created as we destroy
 	 * whole pipeline when stopping in streamming playback
@@ -6549,6 +6675,8 @@ _mmplayer_push_buffer(MMHandleType hplayer, unsigned char *buf, int size)
         	g_signal_emit_by_name (player->pipeline->mainbin[MMPLAYER_M_SRC].gst, "end-of-stream", &gst_ret);
         	return MM_ERROR_NONE;
     	}
+
+	//gst_buffer_insert_memory(buffer, -1, gst_memory_new_wrapped(0, (guint8 *)(buf->buf + buf->offset), len, 0, len, (guint8*)(buf->buf + buf->offset), g_free));
 
     	debug_log("feed buffer %p, length %u\n", buf, size);
     	g_signal_emit_by_name (player->pipeline->mainbin[MMPLAYER_M_SRC].gst, "push-buffer", buffer, &gst_ret);
@@ -6791,7 +6919,7 @@ ERROR:
  * @see
  */
 static int
-__mmplayer_gst_create_pipeline(mm_player_t* player)
+__mmplayer_gst_create_pipeline(mm_player_t* player) // @
 {
 	GstBus	*bus = NULL;
 	MMPlayerGstElement *mainbin = NULL;
@@ -7039,6 +7167,8 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 			}
 
 			g_object_set( element, "stream-type", stream_type, NULL );
+			//g_object_set( element, "size", player->mem_buf.len, NULL );
+			//g_object_set( element, "blocksize", (guint64)20480, NULL );
 
 			MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "seek-data",
 				G_CALLBACK(__gst_appsrc_seek_data), player);
@@ -7048,9 +7178,9 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 				G_CALLBACK(__gst_appsrc_enough_data), player);
 		}
 		break;
-		case MM_PLAYER_URI_TYPE_MS_BUFF:
+		case MM_PLAYER_URI_TYPE_ES_BUFF:
 		{
-			debug_log("MS buff src is selected\n");
+			debug_log("es buff src is selected\n");
 
 			if (player->v_stream_caps)
 			{
@@ -7106,6 +7236,7 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 				if ( player->media_stream_buffer_min_percent[MM_PLAYER_STREAM_TYPE_VIDEO] > 0)
 					g_object_set(G_OBJECT(element), "min-percent", player->media_stream_buffer_min_percent[MM_PLAYER_STREAM_TYPE_VIDEO], NULL);
 
+				/*Fix Seek External Demuxer:  set audio and video appsrc as seekable */
 				gst_app_src_set_stream_type((GstAppSrc*)G_OBJECT(element), GST_APP_STREAM_TYPE_SEEKABLE);
 				MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "seek-data",
 														G_CALLBACK(__gst_seek_video_data), player);
@@ -7120,6 +7251,7 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 					if ( player->media_stream_buffer_min_percent[MM_PLAYER_STREAM_TYPE_AUDIO] > 0)
 						g_object_set(G_OBJECT(elem_src_audio), "min-percent", player->media_stream_buffer_min_percent[MM_PLAYER_STREAM_TYPE_AUDIO], NULL);
 
+					/*Fix Seek External Demuxer:  set audio and video appsrc as seekable */
 					gst_app_src_set_stream_type((GstAppSrc*)G_OBJECT(elem_src_audio), GST_APP_STREAM_TYPE_SEEKABLE);
 					MMPLAYER_SIGNAL_CONNECT( player, elem_src_audio, MM_PLAYER_SIGNAL_TYPE_OTHERS, "seek-data",
 														G_CALLBACK(__gst_seek_audio_data), player);
@@ -7135,6 +7267,7 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 				if ( player->media_stream_buffer_min_percent[MM_PLAYER_STREAM_TYPE_AUDIO] > 0)
 					g_object_set(G_OBJECT(element), "min-percent", player->media_stream_buffer_min_percent[MM_PLAYER_STREAM_TYPE_AUDIO], NULL);
 
+				/*Fix Seek External Demuxer:  set audio and video appsrc as seekable */
 				gst_app_src_set_stream_type((GstAppSrc*)G_OBJECT(element), GST_APP_STREAM_TYPE_SEEKABLE);
 				MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "seek-data",
 															G_CALLBACK(__gst_seek_audio_data), player);
@@ -7156,33 +7289,36 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 																G_CALLBACK(__gst_seek_subtitle_data), player);
 			}
 
-			if (player->v_stream_caps && element)
+			if (!player->es_player_push_mode)
 			{
-				MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
-														G_CALLBACK(__gst_appsrc_feed_video_data), player);
-				MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "enough-data",
-														G_CALLBACK(__gst_appsrc_enough_video_data), player);
-
-				if (player->a_stream_caps && elem_src_audio)
+				if (player->v_stream_caps && element)
 				{
-					MMPLAYER_SIGNAL_CONNECT( player, elem_src_audio, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
-														G_CALLBACK(__gst_appsrc_feed_audio_data), player);
+					MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
+															G_CALLBACK(__gst_appsrc_feed_video_data), player);
 					MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "enough-data",
-														G_CALLBACK(__gst_appsrc_enough_audio_data), player);
-				}
-			}
-			else if (player->a_stream_caps && element)
-			{
-				MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
-														G_CALLBACK(__gst_appsrc_feed_audio_data), player);
-				MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "enough-data",
-														G_CALLBACK(__gst_appsrc_enough_audio_data), player);
-			}
+															G_CALLBACK(__gst_appsrc_enough_video_data), player);
 
-			if (player->s_stream_caps && elem_src_subtitle)
-			{
-				MMPLAYER_SIGNAL_CONNECT( player, elem_src_subtitle, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
-														G_CALLBACK(__gst_appsrc_feed_subtitle_data), player);
+					if (player->a_stream_caps && elem_src_audio)
+					{
+						MMPLAYER_SIGNAL_CONNECT( player, elem_src_audio, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
+															G_CALLBACK(__gst_appsrc_feed_audio_data), player);
+						MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "enough-data",
+															G_CALLBACK(__gst_appsrc_enough_audio_data), player);
+					}
+				}
+				else if (player->a_stream_caps && element)
+				{
+					MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
+															G_CALLBACK(__gst_appsrc_feed_audio_data), player);
+					MMPLAYER_SIGNAL_CONNECT( player, element, MM_PLAYER_SIGNAL_TYPE_OTHERS, "enough-data",
+															G_CALLBACK(__gst_appsrc_enough_audio_data), player);
+				}
+
+				if (player->s_stream_caps && elem_src_subtitle)
+				{
+					MMPLAYER_SIGNAL_CONNECT( player, elem_src_subtitle, MM_PLAYER_SIGNAL_TYPE_OTHERS, "need-data",
+															G_CALLBACK(__gst_appsrc_feed_subtitle_data), player);
+				}
 			}
 
 			need_state_holder = FALSE;
@@ -7271,7 +7407,7 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 				NULL,
 				0);
 	}
-	if (MMPLAYER_IS_MS_BUFF_SRC(player))
+	if (MMPLAYER_IS_ES_BUFF_SRC(player))
 	{
 		if (player->v_stream_caps)
 		{
@@ -7337,7 +7473,8 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 
 	/* create autoplugging element if src element is not a rtsp src */
 	if ((player->profile.uri_type != MM_PLAYER_URI_TYPE_URL_RTSP) &&
-		(player->profile.uri_type != MM_PLAYER_URI_TYPE_MS_BUFF))
+		(player->profile.uri_type != MM_PLAYER_URI_TYPE_URL_WFD) &&
+		(player->profile.uri_type != MM_PLAYER_URI_TYPE_ES_BUFF))
 	{
 		element = NULL;
 		enum MainElementID elemId = MMPLAYER_M_NUM;
@@ -7417,7 +7554,7 @@ __mmplayer_gst_create_pipeline(mm_player_t* player)
 	/* now we have completed mainbin. take it */
 	player->pipeline->mainbin = mainbin;
 
-	if (MMPLAYER_IS_MS_BUFF_SRC(player))
+	if (MMPLAYER_IS_ES_BUFF_SRC(player))
 	{
 		GstPad *srcpad = NULL;
 
@@ -7569,7 +7706,7 @@ __mmplayer_reset_gapless_state(mm_player_t* player)
 }
 
 static int
-__mmplayer_gst_destroy_pipeline(mm_player_t* player)
+__mmplayer_gst_destroy_pipeline(mm_player_t* player) // @
 {
 	gint timeout = 0;
 	int ret = MM_ERROR_NONE;
@@ -7698,7 +7835,7 @@ __mmplayer_gst_destroy_pipeline(mm_player_t* player)
 	return ret;
 }
 
-static int __gst_realize(mm_player_t* player)
+static int __gst_realize(mm_player_t* player) // @
 {
 	gint timeout = 0;
 	int ret = MM_ERROR_NONE;
@@ -7741,7 +7878,7 @@ static int __gst_realize(mm_player_t* player)
 	return ret;
 }
 
-static int __gst_unrealize(mm_player_t* player)
+static int __gst_unrealize(mm_player_t* player) // @
 {
 	int ret = MM_ERROR_NONE;
 
@@ -7813,7 +7950,7 @@ static int __gst_pending_seek ( mm_player_t* player )
 	return ret;
 }
 
-static int __gst_start(mm_player_t* player)
+static int __gst_start(mm_player_t* player) // @
 {
 	gboolean sound_extraction = 0;
 	int ret = MM_ERROR_NONE;
@@ -7922,7 +8059,7 @@ static void __mmplayer_undo_sound_fadedown(mm_player_t* player)
 	MMPLAYER_FLEAVE();
 }
 
-static int __gst_stop(mm_player_t* player)
+static int __gst_stop(mm_player_t* player) // @
 {
 	GstStateChangeReturn change_ret = GST_STATE_CHANGE_SUCCESS;
 	MMHandleType attrs = 0;
@@ -8006,7 +8143,7 @@ static int __gst_stop(mm_player_t* player)
 	/* initialize */
 	player->sent_bos = FALSE;
 
-	if (player->es_player_push_mode)
+	if (player->es_player_push_mode) //for cloudgame
 	{
 		timeout = 0;
 	}
@@ -8032,7 +8169,7 @@ static int __gst_stop(mm_player_t* player)
 	return ret;
 }
 
-int __gst_pause(mm_player_t* player, gboolean async)
+int __gst_pause(mm_player_t* player, gboolean async) // @
 {
 	int ret = MM_ERROR_NONE;
 
@@ -8142,7 +8279,7 @@ int __gst_pause(mm_player_t* player, gboolean async)
 	return ret;
 }
 
-int __gst_resume(mm_player_t* player, gboolean async)
+int __gst_resume(mm_player_t* player, gboolean async) // @
 {
 	int ret = MM_ERROR_NONE;
 	gint timeout = 0;
@@ -8176,6 +8313,7 @@ int __gst_resume(mm_player_t* player, gboolean async)
 	{
 		if (async == FALSE)
 		{
+			// MMPLAYER_SET_STATE ( player, MM_PLAYER_STATE_PLAYING );
 			debug_log("update state machine to %d\n", MM_PLAYER_STATE_PLAYING);
 			ret = __mmplayer_set_state(player, MM_PLAYER_STATE_PLAYING);
 		}
@@ -8190,7 +8328,7 @@ int __gst_resume(mm_player_t* player, gboolean async)
 }
 
 static int
-__gst_set_position(mm_player_t* player, int format, unsigned long position, gboolean internal_called)
+__gst_set_position(mm_player_t* player, int format, unsigned long position, gboolean internal_called) // @
 {
 	unsigned long dur_msec = 0;
 	gint64 dur_nsec = 0;
@@ -8207,7 +8345,7 @@ __gst_set_position(mm_player_t* player, int format, unsigned long position, gboo
 		&& MMPLAYER_CURRENT_STATE(player) != MM_PLAYER_STATE_PAUSED )
 		goto PENDING;
 
-	if( !MMPLAYER_IS_MS_BUFF_SRC(player) )
+	if( !MMPLAYER_IS_ES_BUFF_SRC(player) )
 	{
 		/* check duration */
 		/* NOTE : duration cannot be zero except live streaming.
@@ -8249,7 +8387,7 @@ __gst_set_position(mm_player_t* player, int format, unsigned long position, gboo
 	{
 		case MM_PLAYER_POS_FORMAT_TIME:
 		{
-			if( !MMPLAYER_IS_MS_BUFF_SRC(player) )
+			if( !MMPLAYER_IS_ES_BUFF_SRC(player) )
 			{
 				/* check position is valid or not */
 				if ( position > dur_msec )
@@ -8380,7 +8518,7 @@ SEEK_ERROR:
 #define TRICKPLAY_OFFSET GST_MSECOND
 
 static int
-__gst_get_position(mm_player_t* player, int format, unsigned long* position)
+__gst_get_position(mm_player_t* player, int format, unsigned long* position) // @
 {
 	MMPlayerStateType current_state = MM_PLAYER_STATE_NONE;
 	signed long long pos_msec = 0;
@@ -8617,7 +8755,7 @@ static int 	__gst_get_buffer_position(mm_player_t* player, int format, unsigned 
 }
 
 static int
-__gst_set_message_callback(mm_player_t* player, MMMessageCallback callback, gpointer user_param)
+__gst_set_message_callback(mm_player_t* player, MMMessageCallback callback, gpointer user_param) // @
 {
 	MMPLAYER_FENTER();
 
@@ -8637,7 +8775,7 @@ __gst_set_message_callback(mm_player_t* player, MMMessageCallback callback, gpoi
 	return MM_ERROR_NONE;
 }
 
-static int __mmfplayer_parse_profile(const char *uri, void *param, MMPlayerParseProfile* data)
+static int __mmfplayer_parse_profile(const char *uri, void *param, MMPlayerParseProfile* data) // @
 {
 	int ret = MM_ERROR_PLAYER_INVALID_URI;
 	char *path = NULL;
@@ -8680,6 +8818,15 @@ static int __mmfplayer_parse_profile(const char *uri, void *param, MMPlayerParse
 			debug_warning("could  access %s.\n", path);
 		}
 	}
+	else if ((path = strstr(uri, "es_buff://")))
+	{
+		if (strlen(path))
+		{
+			strcpy(data->uri, uri);
+			data->uri_type = MM_PLAYER_URI_TYPE_ES_BUFF;
+			ret = MM_ERROR_NONE;
+		}
+	}
 	else if ((path = strstr(uri, "buff://")))
 	{
 			data->uri_type = MM_PLAYER_URI_TYPE_BUFF;
@@ -8688,9 +8835,17 @@ static int __mmfplayer_parse_profile(const char *uri, void *param, MMPlayerParse
 	else if ((path = strstr(uri, "rtsp://")))
 	{
 		if (strlen(path)) {
-			strcpy(data->uri, uri);
-			data->uri_type = MM_PLAYER_URI_TYPE_URL_RTSP;
-			ret = MM_ERROR_NONE;
+			if((path = strstr(uri, "/wfd1.0/"))) {
+				strcpy(data->uri, uri);
+				data->uri_type = MM_PLAYER_URI_TYPE_URL_WFD;
+				ret = MM_ERROR_NONE;
+				debug_log("uri is actually a wfd client path. giving it to wfdrtspsrc\n");
+			}
+			else {
+				strcpy(data->uri, uri);
+				data->uri_type = MM_PLAYER_URI_TYPE_URL_RTSP;
+				ret = MM_ERROR_NONE;
+			}
 		}
 	}
 	else if ((path = strstr(uri, "http://")) || (path = strstr(uri, "https://")))
@@ -8855,8 +9010,20 @@ gboolean _asm_postmsg(gpointer *data)
 	msg.union_type = MM_MSG_UNION_CODE;
 	msg.code = player->sm.event_src;
 
-	MMPLAYER_POST_MSG( player, MM_MESSAGE_READY_TO_RESUME, &msg);
-	player->resume_event_id = 0;
+#if 0 // should remove
+	if (player->sm.event_src == ASM_EVENT_SOURCE_RESUMABLE_CANCELED)
+	{
+		/* fill the message with state of player */
+		msg.state.current = MMPLAYER_CURRENT_STATE(player);
+		MMPLAYER_POST_MSG( player, MM_MESSAGE_STATE_INTERRUPTED, &msg);
+		player->resumable_cancel_id = 0;
+	}
+	else
+#endif
+	{
+		MMPLAYER_POST_MSG( player, MM_MESSAGE_READY_TO_RESUME, &msg);
+		player->resume_event_id = 0;
+	}
 
 	debug_warning("dispatched");
 	return FALSE;
@@ -9000,6 +9167,18 @@ __mmplayer_asm_callback(int handle, ASM_event_sources_t event_src, ASM_sound_com
 		}
 		goto DONE;
 	}
+#if 0 // should remove
+	else if (event_src == ASM_EVENT_SOURCE_RESUMABLE_CANCELED)
+	{
+		debug_warning("Got msg from asm for resumable canceled.\n");
+		player->sm.antishock = TRUE;
+		player->sm.by_asm_cb = FALSE;
+
+		player->resumable_cancel_id = g_idle_add((GSourceFunc)_asm_postmsg, (gpointer)player);
+		cb_res = ASM_CB_RES_IGNORE;
+		goto DONE;
+	}
+#endif
 	/* then, check command */
 	switch(command)
 	{
@@ -9111,7 +9290,7 @@ EXIT:
 }
 
 int
-_mmplayer_create_player(MMHandleType handle)
+_mmplayer_create_player(MMHandleType handle) // @
 {
 	mm_player_t* player = MM_PLAYER_CAST(handle);
 
@@ -9292,7 +9471,7 @@ ERROR:
 }
 
 static gboolean
-__mmplayer_init_gstreamer(mm_player_t* player)
+__mmplayer_init_gstreamer(mm_player_t* player) // @
 {
 	static gboolean initialized = FALSE;
 	static const int max_argc = 50;
@@ -9427,7 +9606,7 @@ __mmplayer_destroy_streaming_ext(mm_player_t* player)
 }
 
 int
-_mmplayer_destroy(MMHandleType handle)
+_mmplayer_destroy(MMHandleType handle) // @
 {
 	mm_player_t* player = MM_PLAYER_CAST(handle);
 
@@ -9576,7 +9755,7 @@ __mmplayer_realize_streaming_ext(mm_player_t* player)
 }
 
 int
-_mmplayer_realize(MMHandleType hplayer)
+_mmplayer_realize(MMHandleType hplayer) // @
 {
 	mm_player_t* player =  (mm_player_t*)hplayer;
 	char *uri =NULL;
@@ -9607,15 +9786,12 @@ _mmplayer_realize(MMHandleType hplayer)
 	mm_attrs_get_string_by_name(attrs, "profile_uri", &uri);
 	mm_attrs_get_data_by_name(attrs, "profile_user_param", &param);
 
-	if (player->profile.uri_type == MM_PLAYER_URI_TYPE_NONE)
-	{
-		ret = __mmfplayer_parse_profile((const char*)uri, param, &player->profile);
+	ret = __mmfplayer_parse_profile((const char*)uri, param, &player->profile);
 
-		if (ret != MM_ERROR_NONE)
-		{
-			debug_error("failed to parse profile\n");
-			return ret;
-		}
+	if (ret != MM_ERROR_NONE)
+	{
+		debug_error("failed to parse profile\n");
+		return ret;
 	}
 
 	/* FIXIT : we can use thouse in player->profile directly */
@@ -9624,6 +9800,18 @@ _mmplayer_realize(MMHandleType hplayer)
 		player->mem_buf.buf = (char *)player->profile.mem;
 		player->mem_buf.len = player->profile.mem_size;
 		player->mem_buf.offset = 0;
+	}
+
+	if (player->profile.uri_type == MM_PLAYER_URI_TYPE_ES_BUFF)
+	{
+		if (strstr(uri, "es_buff://push_mode"))
+		{
+			player->es_player_push_mode = TRUE;
+		}
+		else
+		{
+			player->es_player_push_mode = FALSE;
+		}
 	}
 
 	if (player->profile.uri_type == MM_PLAYER_URI_TYPE_URL_MMS)
@@ -9736,7 +9924,7 @@ _mmplayer_unrealize(MMHandleType hplayer)
 }
 
 int
-_mmplayer_set_message_callback(MMHandleType hplayer, MMMessageCallback callback, gpointer user_param)
+_mmplayer_set_message_callback(MMHandleType hplayer, MMMessageCallback callback, gpointer user_param) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 
@@ -9746,7 +9934,7 @@ _mmplayer_set_message_callback(MMHandleType hplayer, MMMessageCallback callback,
 }
 
 int
-_mmplayer_get_state(MMHandleType hplayer, int* state)
+_mmplayer_get_state(MMHandleType hplayer, int* state) // @
 {
 	mm_player_t *player = (mm_player_t*)hplayer;
 
@@ -9759,7 +9947,7 @@ _mmplayer_get_state(MMHandleType hplayer, int* state)
 
 
 int
-_mmplayer_set_volume(MMHandleType hplayer, MMPlayerVolumeType volume)
+_mmplayer_set_volume(MMHandleType hplayer, MMPlayerVolumeType volume) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 	GstElement* vol_element = NULL;
@@ -9839,7 +10027,7 @@ _mmplayer_get_volume(MMHandleType hplayer, MMPlayerVolumeType* volume)
 
 
 int
-_mmplayer_set_mute(MMHandleType hplayer, int mute)
+_mmplayer_set_mute(MMHandleType hplayer, int mute) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 	GstElement* vol_element = NULL;
@@ -9852,6 +10040,8 @@ _mmplayer_set_mute(MMHandleType hplayer, int mute)
 	if ( mute != 0 && mute != 1 )
 	{
 		debug_error("bad mute value\n");
+
+		/* FIXIT : definitly, we need _BAD_PARAM error code */
 		return MM_ERROR_INVALID_ARGUMENT;
 	}
 
@@ -9883,7 +10073,7 @@ _mmplayer_set_mute(MMHandleType hplayer, int mute)
 }
 
 int
-_mmplayer_get_mute(MMHandleType hplayer, int* pmute)
+_mmplayer_get_mute(MMHandleType hplayer, int* pmute) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 
@@ -9944,7 +10134,7 @@ _mmplayer_set_audiostream_changed_cb(MMHandleType hplayer, mm_player_stream_chan
 }
 
 int
-_mmplayer_set_audiostream_cb_ex(MMHandleType hplayer, bool sync, mm_player_audio_stream_callback_ex callback, void *user_param)
+_mmplayer_set_audiostream_cb_ex(MMHandleType hplayer, bool sync, mm_player_audio_stream_callback_ex callback, void *user_param) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 
@@ -9963,7 +10153,7 @@ _mmplayer_set_audiostream_cb_ex(MMHandleType hplayer, bool sync, mm_player_audio
 }
 
 int
-_mmplayer_set_videostream_cb(MMHandleType hplayer, mm_player_video_stream_callback callback, void *user_param)
+_mmplayer_set_videostream_cb(MMHandleType hplayer, mm_player_video_stream_callback callback, void *user_param) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 
@@ -9982,7 +10172,7 @@ _mmplayer_set_videostream_cb(MMHandleType hplayer, mm_player_video_stream_callba
 }
 
 int
-_mmplayer_set_audiostream_cb(MMHandleType hplayer, mm_player_audio_stream_callback callback, void *user_param)
+_mmplayer_set_audiostream_cb(MMHandleType hplayer, mm_player_audio_stream_callback callback, void *user_param) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 
@@ -10080,7 +10270,7 @@ _mmplayer_set_runtime_buffering_mode(MMHandleType hplayer, MMPlayerBufferingMode
 }
 
 int
-_mmplayer_set_videoframe_render_error_cb(MMHandleType hplayer, mm_player_video_frame_render_error_callback callback, void *user_param)
+_mmplayer_set_videoframe_render_error_cb(MMHandleType hplayer, mm_player_video_frame_render_error_callback callback, void *user_param) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 
@@ -10137,7 +10327,7 @@ __mmplayer_start_streaming_ext(mm_player_t *player)
 }
 
 int
-_mmplayer_start(MMHandleType hplayer)
+_mmplayer_start(MMHandleType hplayer) // @
 {
 	mm_player_t* player = (mm_player_t*) hplayer;
 	gint ret = MM_ERROR_NONE;
@@ -10311,7 +10501,7 @@ static void __mmplayer_check_pipeline(mm_player_t* player)
 
 /* NOTE : it should be able to call 'stop' anytime*/
 int
-_mmplayer_stop(MMHandleType hplayer)
+_mmplayer_stop(MMHandleType hplayer) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 	int ret = MM_ERROR_NONE;
@@ -10349,7 +10539,7 @@ _mmplayer_stop(MMHandleType hplayer)
 }
 
 int
-_mmplayer_pause(MMHandleType hplayer)
+_mmplayer_pause(MMHandleType hplayer) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 	gint64 pos_msec = 0;
@@ -10548,7 +10738,7 @@ __mmplayer_set_pcm_extraction(mm_player_t* player)
 	}
 	dur_msec = GST_TIME_AS_MSECONDS(dur_nsec);
 
-	if (dur_msec < required_end)
+	if (dur_msec < required_end) // FIXME
 	{
 		debug_log("invalid end pos for pcm extraction");
 		return MM_ERROR_INVALID_ARGUMENT;
@@ -10683,7 +10873,7 @@ _mmplayer_set_playspeed(MMHandleType hplayer, float rate)
 }
 
 int
-_mmplayer_set_position(MMHandleType hplayer, int format, int position)
+_mmplayer_set_position(MMHandleType hplayer, int format, int position) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 	int ret = MM_ERROR_NONE;
@@ -10700,7 +10890,7 @@ _mmplayer_set_position(MMHandleType hplayer, int format, int position)
 }
 
 int
-_mmplayer_get_position(MMHandleType hplayer, int format, unsigned long *position)
+_mmplayer_get_position(MMHandleType hplayer, int format, unsigned long *position) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 	int ret = MM_ERROR_NONE;
@@ -10713,7 +10903,7 @@ _mmplayer_get_position(MMHandleType hplayer, int format, unsigned long *position
 }
 
 int
-_mmplayer_get_buffer_position(MMHandleType hplayer, int format, unsigned long* start_pos, unsigned long* stop_pos)
+_mmplayer_get_buffer_position(MMHandleType hplayer, int format, unsigned long* start_pos, unsigned long* stop_pos) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 	int ret = MM_ERROR_NONE;
@@ -10726,7 +10916,7 @@ _mmplayer_get_buffer_position(MMHandleType hplayer, int format, unsigned long* s
 }
 
 int
-_mmplayer_adjust_subtitle_postion(MMHandleType hplayer, int format, int position)
+_mmplayer_adjust_subtitle_postion(MMHandleType hplayer, int format, int position) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 	int ret = MM_ERROR_NONE;
@@ -10742,7 +10932,7 @@ _mmplayer_adjust_subtitle_postion(MMHandleType hplayer, int format, int position
 	return ret;
 }
 int
-_mmplayer_adjust_video_postion(MMHandleType hplayer, int offset)
+_mmplayer_adjust_video_postion(MMHandleType hplayer, int offset) // @
 {
 	mm_player_t* player = (mm_player_t*)hplayer;
 	int ret = MM_ERROR_NONE;
@@ -10859,7 +11049,7 @@ __mmplayer_update_content_type_info(mm_player_t* player)
 }
 
 static void
-__mmplayer_typefind_have_type(  GstElement *tf, guint probability,
+__mmplayer_typefind_have_type(  GstElement *tf, guint probability,  // @
 GstCaps *caps, gpointer data)
 {
 	mm_player_t* player = (mm_player_t*)data;
@@ -10875,7 +11065,8 @@ GstCaps *caps, gpointer data)
 	if (player->type)
 		debug_log("meida type %s found, probability %d%% / %d\n", player->type, probability, gst_caps_get_size(caps));
 
-	if ( (!MMPLAYER_IS_RTSP_STREAMING( player )) &&
+	if ( (!MMPLAYER_IS_WFD_STREAMING( player )) &&
+		 (!MMPLAYER_IS_RTSP_STREAMING( player )) &&
 		 (g_strrstr(player->type, "audio/x-raw-int")))
 	{
 		debug_error("not support media format\n");
@@ -11251,7 +11442,7 @@ ERROR:
 
 /* it will return first created element */
 static gboolean
-__mmplayer_try_to_plug(mm_player_t* player, GstPad *pad, const GstCaps *caps)
+__mmplayer_try_to_plug(mm_player_t* player, GstPad *pad, const GstCaps *caps) // @
 {
 	MMPlayerGstElement* mainbin = NULL;
 	const char* mime = NULL;
@@ -11396,7 +11587,7 @@ __mmplayer_try_to_plug(mm_player_t* player, GstPad *pad, const GstCaps *caps)
 		klass = gst_element_factory_get_metadata (GST_ELEMENT_FACTORY(factory), GST_ELEMENT_METADATA_KLASS);
 
 		/*parsers are not required in case of external feeder*/
-		if (g_strrstr(klass, "Codec/Parser") && MMPLAYER_IS_MS_BUFF_SRC(player))
+		if (g_strrstr(klass, "Codec/Parser") && MMPLAYER_IS_ES_BUFF_SRC(player))
 			continue;
 
 		/* NOTE : msl don't need to use image plugins.
@@ -12628,7 +12819,7 @@ GstCaps* caps, GstElementFactory* factory, gpointer data)
 
 	if (g_strrstr(klass, "Codec/Demuxer") || (g_strrstr(klass, "Codec/Parser")))
 	{
-		if (MMPLAYER_IS_MS_BUFF_SRC(player))
+		if (MMPLAYER_IS_ES_BUFF_SRC(player))
 		{
 			// TO CHECK : subtitle if needed, add subparse exception.
 			debug_log("skipping parser/demuxer [%s] in es player by not required\n", factory_name);
@@ -12767,9 +12958,25 @@ DONE:
 	return result;
 }
 
+
+#if 0
+static GValueArray*
+__mmplayer_gst_decode_autoplug_factories(GstElement *bin,  GstPad* pad,
+GstCaps * caps,  gpointer data)
+{
+   	//mm_player_t* player = (mm_player_t*)data;
+
+	debug_log("decodebin is requesting factories for caps [%s] from element[%s]",
+		gst_caps_to_string(caps),
+		GST_ELEMENT_NAME(GST_PAD_PARENT(pad)));
+
+	return NULL;
+}
+#endif
+
 static void
 __mmplayer_gst_decode_pad_removed(GstElement *elem,  GstPad* new_pad,
-gpointer data)
+gpointer data) // @
 {
    	//mm_player_t* player = (mm_player_t*)data;
 	GstCaps* caps = NULL;
@@ -13028,7 +13235,7 @@ static gboolean __mmplayer_configure_audio_callback(mm_player_t* player)
 }
 
 static void
-__mmplayer_init_factories(mm_player_t* player)
+__mmplayer_init_factories(mm_player_t* player) // @
 {
 	return_if_fail ( player );
 
@@ -13038,7 +13245,7 @@ __mmplayer_init_factories(mm_player_t* player)
 }
 
 static void
-__mmplayer_release_factories(mm_player_t* player)
+__mmplayer_release_factories(mm_player_t* player) // @
 {
 	MMPLAYER_FENTER();
 	return_if_fail ( player );
@@ -13110,7 +13317,6 @@ __mmplayer_release_misc(mm_player_t* player)
 	player->last_multiwin_status = FALSE;
 	player->has_closed_caption = FALSE;
 	player->set_mode.media_packet_video_stream = FALSE;
-	player->profile.uri_type = MM_PLAYER_URI_TYPE_NONE;
 	memset(&player->set_mode, 0, sizeof(MMPlayerSetMode));
 	/* recover mode */
 	player->set_mode.rich_audio = cur_mode;
@@ -13441,6 +13647,7 @@ const char *padname, const GList *templlist)
 		q_max_size_time = GST_QUEUE_DEFAULT_TIME;
 
 		/* assigning queue handle for futher manipulation purpose */
+		/* FIXIT : make it some kind of list so that msl can support more then two stream (text, data, etc...) */
 		if(mainbin[MMPLAYER_M_Q1].gst == NULL)
 		{
 			mainbin[MMPLAYER_M_Q1].id = MMPLAYER_M_Q1;
@@ -13810,7 +14017,7 @@ ERROR:
     return FALSE;
 }
 
-static gboolean __mmplayer_feature_filter(GstPluginFeature *feature, gpointer data)
+static gboolean __mmplayer_feature_filter(GstPluginFeature *feature, gpointer data) // @
 {
     	const gchar *klass;
     	//const gchar *name;
@@ -14970,6 +15177,7 @@ __mmplayer_link_sink( mm_player_t* player , GstPad *srcpad)
 	MMPLAYER_FLEAVE();
 
 	return TRUE;
+	//return (!player->videosink_linked || !player->audiosink_linked);
 
 ERROR:
 	if ( srccaps )
@@ -15030,7 +15238,7 @@ __gst_send_event_to_sink( mm_player_t* player, GstEvent* event )
 					}
 				}
 
-				if( MMPLAYER_IS_MS_BUFF_SRC(player))
+				if( MMPLAYER_IS_ES_BUFF_SRC(player))
 				{
 					sinks = g_list_next (sinks);
 					continue;
@@ -15045,6 +15253,13 @@ __gst_send_event_to_sink( mm_player_t* player, GstEvent* event )
 
 		sinks = g_list_next (sinks);
 	}
+
+#if 0
+	if (internal_sub)
+	  request pad name = sink0;
+	else
+	  request pad name = sink1; // external
+#endif
 
 	/* Note : Textbin is not linked to the video or audio bin.
 	 * It needs to send the event to the text sink seperatelly.
@@ -15384,6 +15599,7 @@ __mmplayer_do_change_videosink(mm_player_t* player, const int dec_index, const c
 	if (!player->doing_seek && previous_state == MM_PLAYER_STATE_PLAYING)
 	{
 		debug_warning("trying to block pad(video)");
+//		if (!gst_pad_set_blocked (src_pad_dec, TRUE))
 		gst_pad_add_probe(src_pad_dec, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
 			NULL, NULL, NULL);
 
@@ -15574,6 +15790,13 @@ __mmplayer_do_change_videosink(mm_player_t* player, const int dec_index, const c
 		}
 
 		/* release blocked and unref src pad of video decoder */
+		#if 0
+		if (!gst_pad_set_blocked (src_pad_dec, FALSE))
+		{
+			debug_error("failed to set pad blocked FALSE(video)");
+			return MM_ERROR_PLAYER_INTERNAL;
+		}
+		#endif
 		debug_warning("pad is unblocked(video)");
 	}
 	else
@@ -15670,6 +15893,13 @@ int _mmplayer_remove_audio_parser_decoder(mm_player_t* player,GstPad *inpad)
 	MMPlayerGstElement* mainbin = NULL;
 	mainbin = player->pipeline->mainbin;
 
+	#if 0
+	if(!gst_pad_set_blocked(inpad,TRUE))
+	{
+		result = MM_ERROR_PLAYER_INTERNAL;
+		goto EXIT;
+	}
+	#endif
 	gst_pad_add_probe(inpad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
 			NULL, NULL, NULL);
 
@@ -15941,6 +16171,8 @@ __mmplayer_change_external_subtitle_language(mm_player_t* player, const char* fi
 			goto EXIT;
 		}
 	}
+
+	//gst_pad_set_blocked_async(src-srcpad, TRUE)
 
 	ret = gst_element_set_state(textbin[MMPLAYER_T_BIN].gst, GST_STATE_READY);
 	if (ret != GST_STATE_CHANGE_SUCCESS)
@@ -16248,6 +16480,14 @@ __is_rtsp_streaming ( mm_player_t* player )
 	return ( player->profile.uri_type == MM_PLAYER_URI_TYPE_URL_RTSP ) ? TRUE : FALSE;
 }
 
+gboolean
+__is_wfd_streaming ( mm_player_t* player )
+{
+  return_val_if_fail ( player, FALSE );
+
+  return ( player->profile.uri_type == MM_PLAYER_URI_TYPE_URL_WFD ) ? TRUE : FALSE;
+}
+
 static gboolean
 __is_http_streaming ( mm_player_t* player )
 {
@@ -16260,9 +16500,9 @@ static gboolean
 __is_streaming ( mm_player_t* player )
 {
 	return_val_if_fail ( player, FALSE );
-	return ( __is_http_progressive_down( player ) || __is_rtsp_streaming ( player )
-		|| __is_http_streaming ( player )|| __is_http_live_streaming ( player )
-		|| __is_dash_streaming ( player ) || __is_smooth_streaming(player) ) ? TRUE : FALSE;
+
+  return ( __is_http_progressive_down( player ) || __is_rtsp_streaming ( player ) || __is_wfd_streaming ( player ) || __is_http_streaming ( player )
+          || __is_http_live_streaming ( player ) || __is_dash_streaming ( player ) || __is_smooth_streaming(player) ) ? TRUE : FALSE;
 }
 
 gboolean
@@ -16307,11 +16547,11 @@ __is_http_progressive_down(mm_player_t* player)
 }
 
 gboolean
-__is_ms_buff_src( mm_player_t* player )
+__is_es_buff_src( mm_player_t* player )
 {
 	return_val_if_fail ( player, FALSE );
 
-	return ( player->profile.uri_type == MM_PLAYER_URI_TYPE_MS_BUFF) ? TRUE : FALSE;
+	return ( player->profile.uri_type == MM_PLAYER_URI_TYPE_ES_BUFF) ? TRUE : FALSE;
 }
 
 gboolean
@@ -16699,6 +16939,7 @@ static GstPadProbeReturn
 __mmplayer_dump_buffer_probe_cb(GstPad *pad,  GstPadProbeInfo *info, gpointer u_data)
 {
 	FILE *dump_data = (FILE *) u_data;
+//	int written = 0;
 	GstBuffer *buffer = gst_pad_probe_info_get_buffer(info);
 	GstMapInfo probe_info = GST_MAP_INFO_INIT;
 

@@ -104,7 +104,7 @@ ERROR:
 	}
 
 	*player = (MMHandleType)0;
-	return MM_ERROR_PLAYER_NO_FREE_SPACE;
+	return MM_ERROR_PLAYER_NO_FREE_SPACE; // are you sure?
 }
 
 int  mm_player_destroy(MMHandleType player)
@@ -390,7 +390,11 @@ int mm_player_push_buffer(MMHandleType player, unsigned char *buf, int size)
 
 	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
 
+	//MMPLAYER_CMD_LOCK( player );
+
 	result = _mmplayer_push_buffer(player, buf, size);
+
+	//MMPLAYER_CMD_UNLOCK( player );
 
 	return result;
 }
@@ -1040,12 +1044,17 @@ void mm_player_media_packet_video_stream_internal_buffer_unref(void *buffer)
 
 int mm_player_submit_packet(MMHandleType player, media_packet_h packet)
 {
+
 	int result = MM_ERROR_NONE;
 
 	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
 
 	/* no lock here, otherwise callback for the "need-data" signal of appsrc will be blocking */
-	result = _mmplayer_submit_media_stream_packet(player, packet);
+	//MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_submit_packet(player, packet);
+
+	//MMPLAYER_CMD_UNLOCK( player );
 
 	return result;
 }
@@ -1060,7 +1069,7 @@ int mm_player_set_video_info (MMHandleType player, media_format_h format)
 
 	MMPLAYER_CMD_LOCK( player );
 
-	result = _mmplayer_set_media_stream_video_info(player, format);
+	result = _mmplayer_set_video_info(player, format);
 
 	MMPLAYER_CMD_UNLOCK( player );
 
@@ -1078,7 +1087,24 @@ int mm_player_set_audio_info (MMHandleType player, media_format_h format)
 
 	MMPLAYER_CMD_LOCK( player );
 
-	result = _mmplayer_set_media_stream_audio_info(player, format);
+	result = _mmplayer_set_audio_info(player, format);
+
+	MMPLAYER_CMD_UNLOCK( player );
+
+	return result;
+}
+
+int mm_player_set_subtitle_info (MMHandleType player, MMPlayerSubtitleStreamInfo *subtitle_stream_info)
+{
+	int result = MM_ERROR_NONE;
+
+	debug_log("\n");
+
+	return_val_if_fail(player, MM_ERROR_PLAYER_NOT_INITIALIZED);
+
+	MMPLAYER_CMD_LOCK( player );
+
+	result = _mmplayer_set_subtitle_info(player, subtitle_stream_info);
 
 	MMPLAYER_CMD_UNLOCK( player );
 

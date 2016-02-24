@@ -120,6 +120,7 @@ bool util_remove_file_backup(const char *backup_path)
 }
 
 #define DETECTION_PREFIX_SIZE	20
+//bool util_is_midi_type_by_mem(void *mem, int size)
 int util_is_midi_type_by_mem(void *mem, int size)
 {
 	const char *p = (const char *)mem;
@@ -161,6 +162,7 @@ int util_is_midi_type_by_mem(void *mem, int size)
 	return MM_AUDIO_CODEC_INVALID;
 }
 
+//bool util_is_midi_type_by_file(const char *file_path)
 int util_is_midi_type_by_file(const char *file_path)
 {
 	struct stat file_attrib;
@@ -287,6 +289,12 @@ util_is_sdp_file ( const char *path )
 	/* first, check extension name */
 	ret = g_str_has_suffix ( uri, "sdp" );
 
+	/* second, if no suffix is there, check it's contents */
+	if ( ! ret )
+	{
+		/* FIXIT : do it soon */
+	}
+
 	g_free( uri);
 	uri = NULL;
 
@@ -406,6 +414,36 @@ done:
 		g_free(buf);
 
 	return charset;
+}
+
+int
+util_get_is_connected_external_display(void)
+{
+  int is_connected_hdmi = -1;
+  int is_connected_mirroring = -1;
+
+#if 0
+	if (vconf_get_int(VCONFKEY_SYSMAN_HDMI, &is_connected_hdmi))
+		debug_error("[hdmi]vconf_set_int FAIL");
+	if (vconf_get_int(VCONFKEY_SCREEN_MIRRORING_STATE, &is_connected_mirroring))
+		debug_error("[mirroring]vconf_set_int FAIL");
+
+	/* if conneted with external display */
+	if (is_connected_mirroring == VCONFKEY_SCREEN_MIRRORING_CONNECTED) {
+		debug_warning ("connected with mirroring display");
+		return MMPLAYER_DISPLAY_MIRRORING_ACTIVE;
+	}
+	if (is_connected_hdmi == VCONFKEY_SYSMAN_HDMI_CONNECTED) {
+		debug_warning ("connected with external display");
+		return MMPLAYER_DISPLAY_HDMI_ACTIVE;
+	}
+	if ((is_connected_mirroring == VCONFKEY_SCREEN_MIRRORING_ACTIVATED || is_connected_mirroring == VCONFKEY_SCREEN_MIRRORING_DEACTIVATED) && is_connected_hdmi == VCONFKEY_SYSMAN_HDMI_DISCONNECTED) {
+		debug_warning ("non-connected status");
+		return MMPLAYER_DISPLAY_NULL;
+	}
+#endif
+	debug_error ("it is not registered (%d, %d)", is_connected_mirroring, is_connected_hdmi);
+	return -1;
 }
 
 int util_get_pixtype(unsigned int fourcc)

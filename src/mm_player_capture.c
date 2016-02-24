@@ -452,6 +452,9 @@ __mmplayer_capture_thread(gpointer data)
 		player->capture.fmt = MM_PLAYER_COLORSPACE_RGB888;
 		msg.data = &player->capture;
 		msg.size = player->capture.size;
+//		msg.captured_frame.width = player->capture.width;
+//		msg.captured_frame.height = player->capture.height;
+//		msg.captured_frame.orientation = player->capture.orientation;
 
 		if (player->cmd >= MMPLAYER_COMMAND_START)
 		{
@@ -460,6 +463,8 @@ __mmplayer_capture_thread(gpointer data)
 		}
 
 		g_mutex_unlock(&player->capture_thread_mutex);
+
+		//MMPLAYER_FREEIF(player->capture.data);
 		continue;
 ERROR:
 		if (player->video_cs == MM_PLAYER_COLORSPACE_NV12_TILED)
@@ -547,8 +552,13 @@ __mmplayer_get_video_frame_from_buffer(mm_player_t* player, GstPad *pad, GstBuff
 				return MM_ERROR_PLAYER_INTERNAL;
 			}
 
+#if 0
+			yplane_size = proved->size[0];
+			uvplane_size = proved->size[1];
+#else
 			yplane_size = proved->stride_width[0] * proved->stride_height[0];
 			uvplane_size = proved->stride_width[1] * proved->stride_height[1];
+#endif
 
 			debug_msg ("yplane_size=%d, uvplane_size=%d\n", yplane_size, uvplane_size);
 			memset(&player->captured, 0x00, sizeof(MMVideoBuffer));

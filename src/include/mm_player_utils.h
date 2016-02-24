@@ -202,6 +202,7 @@ debug_log("-- prev %s, current %s, pending %s, target %s --\n", \
 /* streaming */
 #define MMPLAYER_IS_STREAMING(x_player)  			__is_streaming(x_player)
 #define MMPLAYER_IS_RTSP_STREAMING(x_player) 	__is_rtsp_streaming(x_player)
+#define MMPLAYER_IS_WFD_STREAMING(x_player) 	__is_wfd_streaming(x_player)
 #define MMPLAYER_IS_HTTP_STREAMING(x_player)  	__is_http_streaming(x_player)
 #define MMPLAYER_IS_HTTP_PD(x_player)			__is_http_progressive_down(x_player)
 #define MMPLAYER_IS_HTTP_LIVE_STREAMING(x_player)  __is_http_live_streaming(x_player)
@@ -210,7 +211,7 @@ debug_log("-- prev %s, current %s, pending %s, target %s --\n", \
 #define MMPLAYER_IS_SMOOTH_STREAMING(x_player)	__is_smooth_streaming(x_player)
 #define MMPLAYER_IS_ADAPTIVE_STREAMING(x_player)	(__is_http_live_streaming(x_player) || __is_dash_streaming(x_player) || __is_smooth_streaming(x_player))
 
-#define MMPLAYER_IS_MS_BUFF_SRC(x_player)		__is_ms_buff_src(x_player)
+#define MMPLAYER_IS_ES_BUFF_SRC(x_player)		__is_es_buff_src(x_player)
 
 #define MMPLAYER_URL_HAS_DASH_SUFFIX(x_player) __has_suffix(x_player, "mpd")
 #define MMPLAYER_URL_HAS_SS_SUFFIX(x_player)	(__has_suffix(x_player, "ism/manifest") || __has_suffix(x_player, "isml/manifest"))
@@ -249,6 +250,8 @@ int util_is_midi_type_by_file(const char *file_path);
 char** util_get_cookie_list ( const char *cookies );
 bool util_check_valid_url ( const char *proxy );
 const char* util_get_charset(const char *file_path);
+
+int util_get_is_connected_external_display(void);
 int util_get_pixtype(unsigned int fourcc);
 
 #ifdef __cplusplus
